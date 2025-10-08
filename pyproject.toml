@@ -1,0 +1,77 @@
+[project]
+authors = [
+    { name = "Mathias Jackermeier", email = "mathias.jackermeier@outlook.com" },
+]
+name = "zones_jax"
+requires-python = ">= 3.11"
+version = "0.1.0"
+
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+zones_jax = { path = ".", editable = true }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+ruff = ">=0.11.13,<0.12"
+python-dotenv = ">=1.1.0,<2"
+jupyter = ">=1.1.1,<2"
+pygame = ">=2.6.1,<3"
+equinox = ">=0.13.1,<0.14"
+
+[project.optional-dependencies]
+cpu = ["jax"]
+gpu = ["jax[cuda12]"]
+
+[tool.pixi.environments]
+default = { features = ["cpu"] }
+gpu = { features = ["gpu"] }
+
+[tool.ruff.lint]
+fixable = ["ALL"]
+ignore = [
+    "B018", # Useless statement (used in notebooks)
+    "D100", # Missing docstring in public module
+    "E402", # Module level import not at top of file (used in notebooks)
+    "E501", # Line too long
+]
+select = [
+    # pyflakes
+    "F",
+    # pycodestyle
+    "E",
+    "W",
+    # flake8-builtins
+    "A",
+    # flake8-bugbear
+    "B",
+    # flake8-comprehensions
+    "C4",
+    # flake8-simplify
+    "SIM",
+    # flake8-unused-arguments
+    "ARG",
+    # pylint
+    "PL",
+    # tidy
+    "TID",
+    # isort,
+    "I",
+    # pep8-naming
+    "N",
+    # pyupgrade
+    "D100",
+    "UP",
+]
+[tool.ruff.lint.pylint]
+max-args = 8
