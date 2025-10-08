@@ -44,7 +44,6 @@ class EnvParams(NamedTuple):
     keepout_radius: float = 0.55
     # Lidar
     num_lidar_bins: int = 16
-    lidar_max_range: float | None = None  # default to world_size if None
 
 
 class EnvState(NamedTuple):
@@ -69,7 +68,7 @@ class EnvObservation(NamedTuple):
     acceleration: jnp.ndarray  # shape: (2,)
     velocity: jnp.ndarray  # shape: (2,)
     angular_velocity: jnp.ndarray  # shape: ()
-    lidar: jnp.ndarray | None = None  # Lidar per color: (C, num_lidar_bins)
+    lidar: jnp.ndarray  # Lidar per color: (C, num_lidar_bins)
 
 
 class EnvTransition(NamedTuple):
@@ -81,23 +80,22 @@ class EnvTransition(NamedTuple):
     done: jnp.ndarray  # shape: () boolean
 
 
-def default_params() -> EnvParams:
+def default_params(**overrides) -> EnvParams:
     """Return a default set of environment parameters."""
-
-    return EnvParams(
-        dt=0.05,
-        world_size=6.6,
-        spawn_size=5.0,
-        agent_radius=0.1,
-        drag=0.08,
-        max_speed=3.0,
-        max_force=2.0,
-        max_angular_velocity=3.0,
-        zone_radius=0.4,
-        zones_per_color=2,
-        num_lidar_bins=16,
-        lidar_max_range=None,
-    )
+    default = {
+        "dt": 0.05,
+        "world_size": 6.6,
+        "spawn_size": 5.0,
+        "agent_radius": 0.1,
+        "drag": 0.08,
+        "max_speed": 3.0,
+        "max_force": 2.0,
+        "max_angular_velocity": 3.0,
+        "zone_radius": 0.4,
+        "zones_per_color": 2,
+        "num_lidar_bins": 16,
+    }
+    return EnvParams(**(default | overrides))
 
 
 _DEFAULT_PARAMS = default_params()
@@ -241,73 +239,43 @@ def _compute_lidar(state: EnvState, params: EnvParams) -> jnp.ndarray:
 
     Returns an array of shape (C, num_bins) with distances in world units.
     """
-    num_bins = params.num_lidar_bins
-    max_range = (
-        params.world_size if params.lidar_max_range is None else params.lidar_max_range
-    )
+    max_range = params.world_size
     pos = state.position  # (2,)
-    angles = jnp.arange(num_bins, dtype=jnp.float32) * (2.0 * jnp.pi / num_bins)
-    dirs = jnp.stack([jnp.cos(angles), jnp.sin(angles)], axis=-1)  # (B,2)
+    bin_size = 2.0 * jnp.pi / params.num_lidar_bins
+    heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])  # (2,)
 
     centers = state.zone_centers  # (N,2)
     colors = state.zone_colors  # (N,)
-    radius_sq = params.zone_radius * params.zone_radius
 
-    def ray_zone_intersect(direction: jnp.ndarray, center: jnp.ndarray) -> jnp.ndarray:
-        """Compute intersection distance for a single ray and zone.
+    def zone_sensor_binned(zone_pos: jnp.ndarray) -> jnp.ndarray:
+        """Compute the sensor of a single zone.
 
-        Args:
-            direction: Ray direction vector (2,)
-            center: Zone center (2,)
+        Returns: (num_bins,)"""
 
-        Returns:
-            Distance to intersection, or inf if no intersection.
-        """
-        # Uses ray-sphere intersection, i.e. ||p + t*d - c||^2 = r^2
-        # where p=pos, d=direction, c=center, r=radius
+        direction = zone_pos - pos  # (2,)
+        dist: float = jnp.linalg.norm(direction)  # ()
+        sensor = jnp.clip(1.0 - dist / max_range, 0.0, 1.0)  # ()
+        direction = direction / (dist + _EPS)  # (2,)
+        dotp = jnp.dot(heading, direction)
+        cross = jnp.cross(heading, direction)
+        angle = jnp.arctan2(cross, dotp) % (2.0 * jnp.pi)
+        bin_idx = jnp.floor(angle / bin_size).astype(jnp.int32)
+        bin_angle = bin_size * bin_idx
+        bins = jnp.zeros((params.num_lidar_bins,), dtype=jnp.float32)
+        alias = (angle - bin_angle) / bin_size
+        bins = bins.at[bin_idx].set(sensor)
+        bins = bins.at[bin_idx + 1].set(sensor * alias)
+        bins = bins.at[bin_idx - 1].set(sensor * (1.0 - alias))
+        return bins
 
-        m = pos - center  # (2,)
-        b = jnp.dot(direction, m)
-        c = jnp.dot(m, m) - radius_sq
-        disc = b * b - c
-
-        has_intersection = disc >= 0.0
-        sqrt_disc = jnp.sqrt(jnp.maximum(disc, 0.0))
-        t_min = -b - sqrt_disc
-        t_max = -b + sqrt_disc
-
-        in_sphere = jnp.logical_and(t_min <= 0.0, t_max >= 0.0)
-        sphere_in_front = t_min >= 0.0
-        return jnp.where(
-            has_intersection,
-            jnp.where(in_sphere, 0.0, jnp.where(sphere_in_front, t_min, jnp.inf)),
-            jnp.inf,
-        )
-
-    # Vectorize over rays (axis 0) and zones (axis 1)
-    ray_zone_distances = jax.vmap(
-        jax.vmap(ray_zone_intersect, in_axes=(None, 0)),  # vmap over zones
-        in_axes=(0, None),  # vmap over rays
-    )(dirs, centers)  # (num_bins, num_zones)
+    sensors = jax.vmap(zone_sensor_binned, in_axes=0)(centers)  # (N, num_bins)
 
     def compute_color_lidar(color_id: jnp.ndarray) -> jnp.ndarray:
-        """Compute lidar for a single color.
-
-        Args:
-            color_id: Scalar color ID
-
-        Returns:
-            Distances for each bin (num_bins,)
-        """
-        # Mask distances for this color
+        """Compute lidar for a single color."""
         mask_color = colors == color_id  # (num_zones,)
-        t_color = jnp.where(mask_color, ray_zone_distances, jnp.inf)
-        # Find minimum distance per bin
-        dmin = jnp.min(t_color, axis=1)  # (num_bins,)
-        # Clamp to max_range
-        dmin = jnp.where(jnp.isfinite(dmin), dmin, max_range)
-        dmin = jnp.clip(dmin, 0.0, max_range)
-        return dmin.astype(jnp.float32)
+        sensors_color = jnp.where(mask_color[:, None], sensors, 0.0)  # (N, num_bins)
+        sensors_color = jnp.max(sensors_color, axis=0)  # (num_bins,)
+        return sensors_color
 
     color_ids = jnp.arange(len(params.colors), dtype=jnp.int32)
     lidar = jax.vmap(compute_color_lidar)(color_ids)  # (C, num_bins)
