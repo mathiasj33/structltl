@@ -20,14 +20,14 @@ class Renderer:
         params: environment.EnvParams,
         screen_size: int = 800,
         grid_size: int = 50,
-        draw_lidar: bool = False,
+        show_lidar: bool = False,
     ):
         pygame.init()
         pygame.display.set_caption("zones-jax")
 
         self._params = params
         self._screen_size = screen_size
-        self.draw_lidar = draw_lidar
+        self.draw_lidar = show_lidar
 
         self._screen = pygame.display.set_mode((screen_size, screen_size))
         self._background = pygame.Surface(self._screen.get_size())
@@ -216,6 +216,11 @@ class Renderer:
 
         return jnp.array([force, angular_velocity])
 
+    def show_fps(self, clock):
+        """Display the current FPS on the window title."""
+        fps = clock.get_fps()
+        pygame.display.set_caption(f"zones-jax - FPS: {fps:.2f}")
+
     def close(self):
         """Close the renderer."""
         pygame.quit()
@@ -224,7 +229,7 @@ class Renderer:
 def run_manual_control():
     """Run the environment with manual control."""
     params = environment.default_params()
-    renderer = Renderer(params)
+    renderer = Renderer(params, show_lidar=False)
 
     key = jax.random.PRNGKey(0)
     state, obs = environment.reset(key, params)
@@ -237,7 +242,7 @@ def run_manual_control():
     while True:
         # Get elapsed time in seconds and add to accumulator
         time_accumulator += (clock.tick(120) / 1000.0) * time_scale
-        print(f"FPS: {clock.get_fps():.2f}")
+        renderer.show_fps(clock)
 
         # Get user action once per frame
         action = renderer.get_action()
@@ -262,6 +267,8 @@ def run_manual_control():
         # Calculate interpolation factor
         alpha = time_accumulator / params.dt
         renderer.render(state, previous_state, obs, alpha)
+        props = {params.colors[i] for i, p in enumerate(obs.propositions.tolist()) if p}
+        print(props)
 
 
 if __name__ == "__main__":

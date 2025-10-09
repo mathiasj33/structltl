@@ -39,7 +39,7 @@ class EnvParams(NamedTuple):
     max_steps: int = 1000
     # Zones
     zone_radius: float = 0.4
-    colors: tuple[str, str, str, str] = ("blue", "green", "magenta", "yellow")
+    colors: tuple[str, str, str, str] = ("red", "green", "purple", "yellow")
     zones_per_color: int = 2
     keepout_radius: float = 0.55
     # Lidar
@@ -69,6 +69,7 @@ class EnvObservation(NamedTuple):
     velocity: jnp.ndarray  # shape: (2,)
     angular_velocity: jnp.ndarray  # shape: ()
     lidar: jnp.ndarray  # Lidar per color: (C, num_lidar_bins)
+    propositions: jnp.ndarray  # shape: (C,) boolean
 
 
 class EnvTransition(NamedTuple):
@@ -154,6 +155,7 @@ def reset(
         velocity=velocity,
         angular_velocity=angular_velocity,
         lidar=lidar,
+        propositions=jnp.zeros((len(params.colors),), dtype=jnp.bool),
     )
     return state, observation
 
@@ -282,6 +284,29 @@ def _compute_lidar(state: EnvState, params: EnvParams) -> jnp.ndarray:
     return lidar
 
 
+def _compute_propositions(state: EnvState, params: EnvParams) -> jnp.ndarray:
+    """Compute which zones the agent is currently inside.
+
+    Returns a boolean array of shape (C,) indicating for each color whether
+    the agent is inside any zone of that color.
+    """
+    pos = state.position  # (2,)
+    centers = state.zone_centers  # (N,2)
+    colors = state.zone_colors  # (N,)
+
+    dists = jnp.linalg.norm(centers - pos, axis=1)  # (N,)
+    inside = dists < params.zone_radius + params.agent_radius  # (N,)
+
+    def compute_color_prop(color_id: jnp.ndarray) -> jnp.ndarray:
+        mask_color = colors == color_id  # (N,)
+        inside_color = jnp.logical_and(mask_color, inside)  # (N,)
+        return jnp.any(inside_color)
+
+    color_ids = jnp.arange(len(params.colors), dtype=jnp.int32)
+    propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
+    return propositions
+
+
 @partial(jax.jit, static_argnames="params")
 def step(
     state: EnvState,
@@ -343,11 +368,13 @@ def step(
         zone_colors=state.zone_colors,
     )
     lidar = _compute_lidar(next_state, params)
+    propositions = _compute_propositions(next_state, params)
     observation = EnvObservation(
         acceleration=acceleration,
         velocity=velocity,
         angular_velocity=angular_velocity,
         lidar=lidar,
+        propositions=propositions,
     )
     return EnvTransition(
         state=next_state,
