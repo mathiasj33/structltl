@@ -19,6 +19,7 @@ platforms = ["linux-64"]
 
 [tool.pixi.pypi-dependencies]
 zones_jax = { path = ".", editable = true }
+jax = { version = "*" }
 
 [tool.pixi.tasks]
 
@@ -30,13 +31,14 @@ pygame = ">=2.6.1,<3"
 equinox = ">=0.13.1,<0.14"
 matplotlib = ">=3.10.6,<4"
 
-[project.optional-dependencies]
-cpu = ["jax"]
-gpu = ["jax[cuda12]"]
+[tool.pixi.feature.gpu.system-requirements]
+cuda = "12"
+
+[tool.pixi.feature.gpu.pypi-dependencies]
+jax = { version = "*", extras = ["cuda12"] }
 
 [tool.pixi.environments]
-default = { features = ["cpu"] }
-gpu = { features = ["gpu"] }
+gpu = ["gpu"]
 
 [tool.ruff.lint]
 fixable = ["ALL"]
