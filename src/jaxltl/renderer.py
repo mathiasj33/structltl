@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import pygame
 from pygame import gfxdraw
 
-from zones_jax import environment
+from jaxltl import environment
 
 
 class Renderer:
@@ -254,7 +254,7 @@ def run_manual_control():
             state = transition.state
             obs = transition.observation
 
-            if transition.done:
+            if transition.truncated or transition.terminated:
                 key, reset_key = jax.random.split(key)
                 print(state.num_steps)
                 state, obs = environment.reset(reset_key, params)
@@ -266,7 +266,7 @@ def run_manual_control():
 
         # Calculate interpolation factor
         alpha = time_accumulator / params.dt
-        renderer.render(state, previous_state, obs, alpha)
+        renderer.render(state.state, previous_state.state, obs, alpha)
         props = {params.colors[i] for i, p in enumerate(obs.propositions.tolist()) if p}
         print(props)
 

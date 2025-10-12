@@ -21,6 +21,7 @@ import jax.numpy as jnp
 from jax import lax
 
 _EPS = 1e-8
+_MAX_ZONE_PLACEMENT_ITERS = 1000
 
 
 class EnvParams(NamedTuple):
@@ -47,6 +48,13 @@ class EnvParams(NamedTuple):
 
 
 class EnvState(NamedTuple):
+    key: jax.Array  # PRNG key for any stochasticity
+    state: InternalState
+    num_steps: jnp.ndarray = jnp.zeros((), dtype=jnp.int32)  # shape: ()
+    info: dict = {}
+
+
+class InternalState(NamedTuple):
     """Dynamical state of the environment."""
 
     # Physics
@@ -58,8 +66,6 @@ class EnvState(NamedTuple):
     # Zones (static for an episode)
     zone_centers: jnp.ndarray  # shape: (N, 2)
     zone_colors: jnp.ndarray  # shape: (N,) int in [0, C)
-    # Episode length
-    num_steps: jnp.ndarray = jnp.zeros((), dtype=jnp.int32)  # shape: ()
 
 
 class EnvObservation(NamedTuple):
@@ -78,7 +84,9 @@ class EnvTransition(NamedTuple):
     state: EnvState
     observation: EnvObservation
     reward: jnp.ndarray  # shape: ()
-    done: jnp.ndarray  # shape: () boolean
+    terminated: jnp.ndarray  # shape: () boolean
+    truncated: jnp.ndarray  # shape: ()
+    terminal_observation: EnvObservation | None = None  # used if done
 
 
 def default_params(**overrides) -> EnvParams:
@@ -100,7 +108,6 @@ def default_params(**overrides) -> EnvParams:
 
 
 _DEFAULT_PARAMS = default_params()
-_MAX_ZONE_PLACEMENT_ITERS = 10000
 
 
 def _wrap_angle(angle: jnp.ndarray) -> jnp.ndarray:
@@ -125,7 +132,7 @@ def reset(
     """
 
     params = _DEFAULT_PARAMS if params is None else params
-    key_zones, key_pos, key_angle = jax.random.split(key, 3)
+    key, key_zones, key_pos, key_angle = jax.random.split(key, 4)
 
     centers, colors = _sample_zones(key_zones, params)
     position = _sample_agent_position(key_pos, params, centers)
@@ -139,7 +146,7 @@ def reset(
     )
     angular_velocity = jnp.zeros((), dtype=jnp.float32)
 
-    state = EnvState(
+    internal_state = InternalState(
         position=position,
         velocity=velocity,
         angle=angle,
@@ -148,14 +155,12 @@ def reset(
         zone_centers=centers,
         zone_colors=colors,
     )
-    # Compute lidar for initial observation
-    lidar = _compute_lidar(state, params)
-    observation = EnvObservation(
-        acceleration=acceleration,
-        velocity=velocity,
-        angular_velocity=angular_velocity,
-        lidar=lidar,
-        propositions=jnp.zeros((len(params.colors),), dtype=jnp.bool),
+    observation = compute_observation(internal_state, params)
+    state = EnvState(
+        key=key,
+        state=internal_state,
+        num_steps=jnp.zeros((), dtype=jnp.int32),
+        info={"initial_observation": observation, "initial_state": internal_state},
     )
     return state, observation
 
@@ -196,20 +201,24 @@ def _sample_zones(key: jax.Array, params: EnvParams) -> tuple[jnp.ndarray, jnp.n
         count = count + jnp.where(all_ok, 1, 0)
         return key, centers, count, it + 1
 
-    key, centers, count, _ = lax.while_loop(
+    key, centers, count, it = lax.while_loop(
         cond_fun, body_fun, (key, centers0, jnp.int32(0), jnp.int32(0))
     )
 
-    # Fallback: evenly space on a circle near border to avoid overlaps
-    def fallback_centers(_centers):
-        r = params.spawn_size / 2
-        k = total_zones
-        thetas = jnp.arange(k, dtype=jnp.float32) * (2.0 * jnp.pi / k)
-        x = r * jnp.cos(thetas)
-        y = r * jnp.sin(thetas)
-        return jnp.stack([x, y], axis=1)
+    fallback_centers = jnp.array(  # random but fixed fallback
+        [
+            [-1.60, -0.54],
+            [0.82, 0.10],
+            [-0.18, -1.12],
+            [-1.91, 1.68],
+            [1.58, 1.23],
+            [1.82, -1.71],
+            [-0.70, 0.58],
+            [-0.49, 1.83],
+        ]
+    )
 
-    centers = lax.cond(count < total_zones, fallback_centers, lambda x: x, centers)
+    centers = jnp.where(count < total_zones, fallback_centers, centers)
     return centers, colors
 
 
@@ -236,7 +245,7 @@ def _sample_agent_position(
     return pos
 
 
-def _compute_lidar(state: EnvState, params: EnvParams) -> jnp.ndarray:
+def _compute_lidar(state: InternalState, params: EnvParams) -> jnp.ndarray:
     """Compute per-color lidar distances with evenly spaced bins around the agent.
 
     Returns an array of shape (C, num_bins) with distances in world units.
@@ -284,7 +293,7 @@ def _compute_lidar(state: EnvState, params: EnvParams) -> jnp.ndarray:
     return lidar
 
 
-def _compute_propositions(state: EnvState, params: EnvParams) -> jnp.ndarray:
+def _compute_propositions(state: InternalState, params: EnvParams) -> jnp.ndarray:
     """Compute which zones the agent is currently inside.
 
     Returns a boolean array of shape (C,) indicating for each color whether
@@ -305,6 +314,16 @@ def _compute_propositions(state: EnvState, params: EnvParams) -> jnp.ndarray:
     color_ids = jnp.arange(len(params.colors), dtype=jnp.int32)
     propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
     return propositions
+
+
+def sample_action(state: EnvState) -> tuple[EnvState, jnp.ndarray]:
+    """Sample a random action for the current state."""
+    key, force_key, vel_key = jax.random.split(state.key, 3)
+    force = jax.random.uniform(force_key, (), minval=-1.0, maxval=1.0)
+    angular_velocity = jax.random.uniform(vel_key, (), minval=-1.0, maxval=1.0)
+    return state._replace(key=key), jnp.array(
+        [force, angular_velocity], dtype=jnp.float32
+    )
 
 
 @partial(jax.jit, static_argnames="params")
@@ -332,53 +351,85 @@ def step(
         action[1], -params.max_angular_velocity, params.max_angular_velocity
     )
 
-    heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
+    internal_state = state.state
+
+    heading = jnp.array([jnp.cos(internal_state.angle), jnp.sin(internal_state.angle)])
     acceleration = heading * force
 
-    velocity = state.velocity + acceleration * params.dt
+    velocity = internal_state.velocity + acceleration * params.dt
     velocity *= 1.0 - params.drag
 
     speed = jnp.linalg.norm(velocity)
     speed_scale = jnp.minimum(1.0, params.max_speed / (speed + _EPS))
     velocity = velocity * speed_scale
 
-    position = state.position + velocity * params.dt
+    position = internal_state.position + velocity * params.dt
 
     # If the agent is out of bounds, reflect its velocity and clamp its position
     # to the edge of the world.
-    half_size = params.world_size / 2.0
+    half_size = params.world_size / 2.0 - params.agent_radius / 2.0
     velocity = jnp.where(jnp.abs(position) > half_size, -velocity, velocity)
     position = jnp.clip(position, -half_size, half_size)
 
-    angle = _wrap_angle(state.angle + target_angular_velocity * params.dt)
+    angle = _wrap_angle(internal_state.angle + target_angular_velocity * params.dt)
     angular_velocity = target_angular_velocity
 
-    done = state.num_steps >= params.max_steps - 1
+    truncated = state.num_steps + 1 >= params.max_steps
 
     reward = jnp.zeros((), dtype=jnp.float32)
 
-    next_state = EnvState(
+    next_internal_state = InternalState(
         position=position,
         velocity=velocity,
         angle=angle,
         angular_velocity=angular_velocity,
         acceleration=acceleration,
-        num_steps=state.num_steps + 1,
-        zone_centers=state.zone_centers,
-        zone_colors=state.zone_colors,
+        zone_centers=internal_state.zone_centers,
+        zone_colors=internal_state.zone_colors,
     )
-    lidar = _compute_lidar(next_state, params)
-    propositions = _compute_propositions(next_state, params)
+    next_observation = compute_observation(next_internal_state, params)
+
+    next_state = EnvState(
+        key=state.key,
+        state=next_internal_state,
+        info=state.info,
+        num_steps=state.num_steps + 1,
+    )
+
+    initial_state = EnvState(
+        key=state.key,
+        state=state.info["initial_state"],
+        info=state.info,
+        num_steps=jnp.zeros((), dtype=jnp.int32),
+    )
+
+    return EnvTransition(
+        state=lax.cond(truncated, lambda: initial_state, lambda: next_state),
+        observation=lax.cond(
+            truncated,
+            lambda: state.info["initial_observation"],
+            lambda: next_observation,
+        ),
+        reward=reward,
+        truncated=truncated,
+        terminated=jnp.zeros((), dtype=jnp.bool),
+        terminal_observation=None,
+    )
+
+
+def compute_observation(state: InternalState, params: EnvParams) -> EnvObservation:
+    """Compute the observation for a given state."""
+    lidar = _compute_lidar(state, params)
+    propositions = _compute_propositions(state, params)
     observation = EnvObservation(
-        acceleration=acceleration,
-        velocity=velocity,
-        angular_velocity=angular_velocity,
+        acceleration=state.acceleration,
+        velocity=state.velocity,
+        angular_velocity=state.angular_velocity,
         lidar=lidar,
         propositions=propositions,
     )
-    return EnvTransition(
-        state=next_state,
-        observation=observation,
-        reward=reward,
-        done=done,
-    )
+    return observation
+
+
+# TODO: save initial observation in state for vectorised reset. Implement resetting envs every x steps. Check performance.
+# TODO: update sample agent position to have a max iters and fallback to a fixed position if exceeded.

@@ -1,4 +1,4 @@
-"""Public API for the zones_jax package."""
+"""Public API for the jaxltl package."""
 
 from .environment import (
     EnvObservation,
