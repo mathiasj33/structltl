@@ -1889,6 +1889,12 @@ packages:
   - pkg:pypi/jaxlib?source=hash-mapping
   size: 173612209
   timestamp: 1759475904182
+- pypi: ./
+  name: jaxltl
+  version: 0.1.0
+  sha256: bf068969d7391b11cb0263d5d0274326484987287ae34998095b3a71f52c0c1b
+  requires_python: '>=3.12'
+  editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/jaxtyping-0.3.2-pyhd8ed1ab_0.conda
   sha256: c8f51056484f23a8a2a47540155095d099983ff8bc03a9b064effa9c8157cf5c
   md5: 4a3e5a04f0d9ee0d00a1cdd686e5c60f
@@ -5256,12 +5262,6 @@ packages:
   - pkg:pypi/zipp?source=hash-mapping
   size: 22963
   timestamp: 1749421737203
-- pypi: ./
-  name: zones-jax
-  version: 0.1.0
-  sha256: de9f60d5c93c899e2df1f08c3fb05b98e8b5fe7c7ee24704b74af78319fa374b
-  requires_python: '>=3.11'
-  editable: true
 - conda: https://conda.anaconda.org/conda-forge/linux-64/zstandard-0.25.0-py313h54dd161_0.conda
   sha256: 9d79d176afe50361cc3fd4366bedff20852dbea1e5b03f358b55f12aca22d60d
   md5: 1fe43bd1fc86e22ad3eb0edec637f8a2

@@ -1,6 +1,4 @@
-"""A 2D renderer for the zones-jax environment based on pygame."""
-
-from __future__ import annotations
+"""A 2D renderer for the zone environment based on pygame."""
 
 import math
 import sys
@@ -11,19 +9,20 @@ import jax.numpy as jnp
 import pygame
 from pygame import gfxdraw
 
-from jaxltl import environment
+import jaxltl
+from jaxltl.environments.zone_env.zone_env import EnvParams, EnvState, ObsFeatures
 
 
 class Renderer:
     def __init__(
         self,
-        params: environment.EnvParams,
+        params: EnvParams,
         screen_size: int = 800,
         grid_size: int = 50,
         show_lidar: bool = False,
     ):
         pygame.init()
-        pygame.display.set_caption("zones-jax")
+        pygame.display.set_caption("ZoneEnv")
 
         self._params = params
         self._screen_size = screen_size
@@ -64,7 +63,7 @@ class Renderer:
                     rect = pygame.Rect(x, y, self.grid_size, self.grid_size)
                     self._background.fill(self._grid_color_2, rect)
 
-    def _render_zones(self, state: environment.EnvState):
+    def _render_zones(self, state: EnvState):
         centers = self._world_to_screen(state.zone_centers).tolist()
         for i, center in enumerate(centers):
             color_id = int(state.zone_colors[i])
@@ -77,7 +76,7 @@ class Renderer:
         gfxdraw.filled_circle(surface, position[0], position[1], radius, color)
 
     @partial(jax.jit, static_argnames=("self",))
-    def _world_to_screen(self, pos: jnp.ndarray) -> jnp.ndarray:
+    def _world_to_screen(self, pos: jax.Array) -> jax.Array:
         """Convert world coordinates to screen coordinates."""
         pos = (pos + self._params.world_size / 2) * self._world_to_screen_scale
         pos = pos.at[:, 1].set(self._screen_size - pos[:, 1])
@@ -85,9 +84,9 @@ class Renderer:
 
     def render(
         self,
-        state: environment.EnvState,
-        previous_state: environment.EnvState,
-        obs: environment.EnvObservation,
+        state: EnvState,
+        previous_state: EnvState,
+        obs: ObsFeatures,
         alpha: float,
     ):
         """Render the environment state."""
@@ -109,7 +108,7 @@ class Renderer:
 
         pygame.display.flip()
 
-    def _draw_agent(self, position: jnp.ndarray, angle: jnp.ndarray):
+    def _draw_agent(self, position: jax.Array, angle: jax.Array):
         # Draw agent heading as a rectangle
         cos_angle = jnp.cos(angle)
         sin_angle = jnp.sin(angle)
@@ -141,9 +140,9 @@ class Renderer:
 
     def _draw_lidar(
         self,
-        position: jnp.ndarray,
-        obs: environment.EnvObservation,
-        state: environment.EnvState,
+        position: jax.Array,
+        obs: ObsFeatures,
+        state: EnvState,
     ):
         self._lidar_surface.fill((0, 0, 0, 0))
         points = self._compute_lidar_points(position, obs, state)  # (C, num_bins, 3)
@@ -169,10 +168,10 @@ class Renderer:
     @staticmethod
     @jax.jit
     def _compute_lidar_points(
-        position: jnp.ndarray,
-        obs: environment.EnvObservation,
-        state: environment.EnvState,
-    ) -> jnp.ndarray:
+        position: jax.Array,
+        obs: ObsFeatures,
+        state: EnvState,
+    ) -> jax.Array:
         # obs.lidar shape (C, num_bins)
         num_bins = obs.lidar.shape[1]
         bin_size = 2 * jnp.pi / num_bins
@@ -190,7 +189,7 @@ class Renderer:
             )
         return points
 
-    def get_action(self) -> jnp.ndarray:
+    def get_action(self) -> jax.Array:
         """Get action from keyboard input."""
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -228,11 +227,13 @@ class Renderer:
 
 def run_manual_control():
     """Run the environment with manual control."""
-    params = environment.default_params()
+    env, default_params = jaxltl.make("ZoneEnv")
+    params: EnvParams = default_params  # type: ignore
     renderer = Renderer(params, show_lidar=False)
 
     key = jax.random.PRNGKey(0)
-    state, obs = environment.reset(key, params)
+    key, key_reset = jax.random.split(key)
+    state, obs = env.reset(key_reset, params)
     previous_state = state
 
     clock = pygame.time.Clock()
@@ -250,14 +251,12 @@ def run_manual_control():
         # Run physics steps to catch up with accumulated time
         while time_accumulator >= params.dt:
             previous_state = state
-            transition = environment.step(state, action, params)
+            key, key_step = jax.random.split(key)
+            transition = env.step(key_step, state, action, params)
             state = transition.state
             obs = transition.observation
 
             if transition.truncated or transition.terminated:
-                key, reset_key = jax.random.split(key)
-                print(state.num_steps)
-                state, obs = environment.reset(reset_key, params)
                 previous_state = state
                 # If we reset, we can break the inner loop to render the new state
                 break
@@ -265,9 +264,13 @@ def run_manual_control():
             time_accumulator -= params.dt
 
         # Calculate interpolation factor
-        alpha = time_accumulator / params.dt
-        renderer.render(state.state, previous_state.state, obs, alpha)
-        props = {params.colors[i] for i, p in enumerate(obs.propositions.tolist()) if p}
+        alpha = float(time_accumulator / params.dt)
+        renderer.render(
+            state.state, previous_state.state, env.unflatten_obs(obs.features), alpha
+        )
+        props = {
+            env.propositions[i] for i, p in enumerate(obs.propositions.tolist()) if p
+        }
         print(props)
 
 
