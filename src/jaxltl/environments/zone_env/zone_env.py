@@ -17,7 +17,7 @@ from jax import lax
 from jaxltl.environments import environment, spaces
 
 _EPS = 1e-8
-_MAX_ZONE_PLACEMENT_ITERS = 1000
+_MAX_SAMPLING_ITERS = 1000
 
 
 class EnvParams(environment.EnvParams):
@@ -155,7 +155,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
         def cond_fun(carry):
             key, centers, count, it = carry
-            return jnp.logical_and(count < total_zones, it < _MAX_ZONE_PLACEMENT_ITERS)
+            return jnp.logical_and(count < total_zones, it < _MAX_SAMPLING_ITERS)
 
         def body_fun(carry):
             key, centers, count, it = carry
@@ -200,19 +200,23 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         maxval = params.spawn_size / 2 - params.keepout_radius
 
         def agent_cond(carry):
-            key, pos = carry
+            key, pos, it = carry
             dists = jnp.linalg.norm(centers - pos, axis=1)
-            return jnp.any(dists < params.keepout_radius * 2)
+            return jnp.logical_and(
+                jnp.any(dists < params.keepout_radius * 2), it < _MAX_SAMPLING_ITERS
+            )
 
         def agent_body(carry):
-            key, _pos = carry
+            key, _pos, it = carry
             key, sub = jax.random.split(key)
             pos = jax.random.uniform(sub, (2,), minval=minval, maxval=maxval)
-            return key, pos
+            return key, pos, it + 1
 
         key_init, key = jax.random.split(key)
         init_pos = jax.random.uniform(key_init, (2,), minval=minval, maxval=maxval)
-        key, pos = lax.while_loop(agent_cond, agent_body, (key, init_pos))
+        key, pos, _ = lax.while_loop(
+            agent_cond, agent_body, (key, init_pos, jnp.int32(0))
+        )
         return pos
 
     def _compute_obs(self, state: EnvState, params: EnvParams) -> ObsFeatures:
@@ -293,8 +297,12 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         velocity *= 1.0 - params.drag
 
         speed = jnp.linalg.norm(velocity)
-        speed_scale = jnp.minimum(1.0, params.max_speed / (speed + _EPS))
-        velocity = velocity * speed_scale
+        scaling_factor = jnp.clip(params.max_speed / speed, 0.0, 1.0)
+        velocity: jax.Array = jnp.where(
+            speed > params.max_speed,
+            velocity * scaling_factor,
+            velocity,
+        )  # type: ignore
 
         position = state.position + velocity * params.dt
 
