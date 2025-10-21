@@ -97,12 +97,16 @@ class PPO(RLAlgorithm):
 
         # Training loop
         def callback_iter(
-            carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array], _
+            carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array, jax.Array],
+            _,
         ):
             def step(
-                carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array], _
+                carry: tuple[
+                    TrainState[ActorCritic], PyTree, PyTree, jax.Array, jax.Array
+                ],
+                _,
             ):
-                train_state, obsv, env_state, key = carry
+                train_state, obsv, env_state, key, step_count = carry
                 key, step_key = jax.random.split(key)
                 train_state, obsv, env_state, metric = self._train_step(
                     train_state,
@@ -113,18 +117,20 @@ class PPO(RLAlgorithm):
                     env_params,
                     key=step_key,
                 )
-                carry = (train_state, obsv, env_state, key)
+                carry = (train_state, obsv, env_state, key, step_count + 1)
                 return carry, metric
 
             carry, metric = eqx_utils.filter_scan(
                 step, carry, None, updates_per_callback
             )
             if callback:
-                jax.experimental.io_callback(callback, None, metric, seed)
+                step_count = carry[4]
+                total_step = step_count * self.config.num_envs * self.config.num_steps
+                jax.experimental.io_callback(callback, None, metric, seed, total_step)
             return carry, metric
 
         key, update_key = jax.random.split(key)
-        carry = (train_state, obsv, env_state, update_key)
+        carry = (train_state, obsv, env_state, update_key, jnp.zeros((), jnp.int32))
         carry, metric = eqx_utils.filter_scan(callback_iter, carry, None, num_callbacks)
         train_state = carry[0]
         return train_state.model, metric

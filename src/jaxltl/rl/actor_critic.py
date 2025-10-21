@@ -3,13 +3,11 @@ from abc import abstractmethod
 import distrax
 import equinox as eqx
 import jax
-
-from jaxltl.environments.environment import EnvObservation
+from jaxtyping import PyTree
 
 
 class ActorCritic(eqx.Module):
-    @abstractmethod
-    def __call__(self, obs: EnvObservation) -> tuple[distrax.Distribution, jax.Array]:
+    def __call__(self, obs: PyTree) -> tuple[distrax.Distribution, jax.Array]:
         """Forward pass through the actor and critic networks.
 
         Args:
@@ -18,16 +16,65 @@ class ActorCritic(eqx.Module):
         Returns:
             A tuple of (action distribution, state value).
         """
-        pass
+        features = self._compute_common_features(obs)
+        dist = self._get_action(features)
+        value = self._get_value(features)
+        return dist, value
 
-    @abstractmethod
-    def get_value(self, obs: EnvObservation) -> jax.Array:
+    def get_action(self, obs: PyTree) -> distrax.Distribution:
+        """Get action distribution from the actor network.
+
+        Args:
+            obs: Batched observations.
+
+        Returns:
+            Batched action distribution.
+        """
+        return self._get_action(self._compute_common_features(obs))
+
+    def get_value(self, obs: PyTree) -> jax.Array:
         """Get state value from the critic network.
 
         Args:
             obs: Batched observations.
 
         Returns:
-            State value.
+            State values.
+        """
+        return self._get_value(self._compute_common_features(obs))
+
+    @abstractmethod
+    def _get_action(self, features: jax.Array) -> distrax.Distribution:
+        """Get action distribution from the actor network given features.
+
+        Args:
+            features: Batched features.
+
+        Returns:
+            Batched action distribution.
+        """
+        pass
+
+    @abstractmethod
+    def _get_value(self, features: jax.Array) -> jax.Array:
+        """Get state value from the critic network.
+
+        Args:
+            features: Batched features.
+
+        Returns:
+            Batched state values.
+        """
+        pass
+
+    @abstractmethod
+    def _compute_common_features(self, obs: PyTree) -> jax.Array:
+        """Compute common features from observations for actor and critic.
+
+        Args:
+            obs: Batched observations.
+
+        Returns:
+            Common features.
         """
         pass

@@ -10,6 +10,8 @@ from omegaconf import DictConfig
 
 import jaxltl
 from jaxltl.deep_ltl.model import DeepLTLModel
+from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
+from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
 from jaxltl.eqx_utils.training import ensemble_to_list
 from jaxltl.rl.algorithm import RLAlgorithm
@@ -24,7 +26,9 @@ def main(cfg: DictConfig):
         logger.info("Using CPU for training")
 
     env, env_params = jaxltl.make(cfg.env)
-    env = AutoResetWrapper(env, reset_to_initial_state=False)  # TODO
+    sampler = ReachSampler(num_propositions=4, max_length=5)
+    env = SequenceWrapper(env, sampler)
+    env = AutoResetWrapper(env, reset_to_initial_state=True)  # TODO
     env = LogWrapper(env)
     env = VectorizeWrapper(env)
 
@@ -33,16 +37,23 @@ def main(cfg: DictConfig):
     split = jax.vmap(jax.random.split)(keys)
     keys, model_keys = split[:, 0], split[:, 1]
 
-    make_models = eqx.filter_vmap(DeepLTLModel, in_axes=(None, None, None, 0))
+    make_models = eqx.filter_vmap(
+        DeepLTLModel, in_axes=(None, None, None, None, None, 0)
+    )
     models = make_models(
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
         jax.nn.tanh,
+        32,
+        4,
         model_keys,
     )
 
-    def callback(metric, seed):
-        logger.info(f"Seed {seed}. Callback!")
+    start_time = time.time()
+
+    def callback(metric, seed, step):
+        seconds = time.time() - start_time
+        logger.info(f"Seed {seed}. Step {step}. SPS: {step / seconds:.2f}")
 
     rl_alg: RLAlgorithm = hydra.utils.instantiate(cfg.rl_alg)
     train = eqx.filter_vmap(
@@ -50,10 +61,9 @@ def main(cfg: DictConfig):
     )
     train = eqx.filter_jit(train)
 
-    start_time = time.time()
     logger.info("Starting training")
     models, metrics = jax.block_until_ready(
-        train(models, env, env_params, keys, None, None, seeds)
+        train(models, env, env_params, keys, callback, 100_000, seeds)
     )
     end_time = time.time()
     logger.info(f"Training completed in {end_time - start_time:.2f} seconds")

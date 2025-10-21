@@ -26,7 +26,7 @@ class EnvParams:
     max_steps_in_episode: int
 
 
-class EnvObservation[TObsFeatures: NamedTuple](NamedTuple):
+class EnvObservation[TObsFeatures: NamedTuple](eqx.Module):
     """Environment observation."""
 
     features: TObsFeatures

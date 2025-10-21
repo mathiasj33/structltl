@@ -116,6 +116,9 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
                 state = transition.state
                 obs = transition.observation
 
+                if transition.reward > 0:
+                    print(f"Reward received: {transition.reward}")
+
                 if transition.truncated or transition.terminated:
                     previous_state = state
                     # If we reset, we can break the inner loop to render the new state
@@ -133,4 +136,4 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
                 for i, p in enumerate(obs.propositions.tolist())
                 if p
             }
-            print(props)
+            # print(props)
