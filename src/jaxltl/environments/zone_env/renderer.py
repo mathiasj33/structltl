@@ -1,19 +1,19 @@
 """A 2D renderer for the zone environment based on pygame."""
 
 import math
-import sys
 from functools import partial
+from typing import override
 
 import jax
 import jax.numpy as jnp
 import pygame
 from pygame import gfxdraw
 
-import jaxltl
+from jaxltl.environments.renderer.renderer import BaseRenderer
 from jaxltl.environments.zone_env.zone_env import EnvParams, EnvState, ObsFeatures
 
 
-class Renderer:
+class Renderer(BaseRenderer[EnvState, ObsFeatures]):
     def __init__(
         self,
         params: EnvParams,
@@ -21,14 +21,12 @@ class Renderer:
         grid_size: int = 50,
         show_lidar: bool = False,
     ):
-        pygame.init()
-        pygame.display.set_caption("ZoneEnv")
+        super().__init__("Zone Environment", screen_size)
 
         self._params = params
         self._screen_size = screen_size
         self.draw_lidar = show_lidar
 
-        self._screen = pygame.display.set_mode((screen_size, screen_size))
         self._background = pygame.Surface(self._screen.get_size())
         self._lidar_surface = pygame.Surface(self._screen.get_size(), pygame.SRCALPHA)
 
@@ -82,6 +80,7 @@ class Renderer:
         pos = pos.at[:, 1].set(self._screen_size - pos[:, 1])
         return pos.astype(jnp.int32)
 
+    @override
     def render(
         self,
         state: EnvState,
@@ -189,17 +188,9 @@ class Renderer:
             )
         return points
 
-    def get_action(self) -> jax.Array:
-        """Get action from keyboard input."""
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                pygame.quit()
-                sys.exit()
-
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_q]:
-            pygame.quit()
-            sys.exit()
+    @override
+    def get_action(self, keys: pygame.key.ScancodeWrapper) -> jax.Array:
+        """Gets an action from user input."""
 
         force = 0.0
         angular_velocity = 0.0
@@ -214,65 +205,3 @@ class Renderer:
             angular_velocity = -self._params.max_angular_velocity
 
         return jnp.array([force, angular_velocity])
-
-    def show_fps(self, clock):
-        """Display the current FPS on the window title."""
-        fps = clock.get_fps()
-        pygame.display.set_caption(f"zones-jax - FPS: {fps:.2f}")
-
-    def close(self):
-        """Close the renderer."""
-        pygame.quit()
-
-
-def run_manual_control():
-    """Run the environment with manual control."""
-    env, default_params = jaxltl.make("ZoneEnv")
-    params: EnvParams = default_params  # type: ignore
-    renderer = Renderer(params, show_lidar=False)
-
-    key = jax.random.PRNGKey(0)
-    key, key_reset = jax.random.split(key)
-    state, obs = env.reset(key_reset, params)
-    previous_state = state
-
-    clock = pygame.time.Clock()
-    time_accumulator = 0.0
-    time_scale = 1.0  # Speed up the simulation
-
-    while True:
-        # Get elapsed time in seconds and add to accumulator
-        time_accumulator += (clock.tick(120) / 1000.0) * time_scale
-        renderer.show_fps(clock)
-
-        # Get user action once per frame
-        action = renderer.get_action()
-
-        # Run physics steps to catch up with accumulated time
-        while time_accumulator >= params.dt:
-            previous_state = state
-            key, key_step = jax.random.split(key)
-            transition = env.step(key_step, state, action, params)
-            state = transition.state
-            obs = transition.observation
-
-            if transition.truncated or transition.terminated:
-                previous_state = state
-                # If we reset, we can break the inner loop to render the new state
-                break
-
-            time_accumulator -= params.dt
-
-        # Calculate interpolation factor
-        alpha = float(time_accumulator / params.dt)
-        renderer.render(
-            state.state, previous_state.state, env.unflatten_obs(obs.features), alpha
-        )
-        props = {
-            env.propositions[i] for i, p in enumerate(obs.propositions.tolist()) if p
-        }
-        print(props)
-
-
-if __name__ == "__main__":
-    run_manual_control()

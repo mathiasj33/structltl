@@ -10,6 +10,13 @@
       "request": "launch",
       "program": "${file}",
       "console": "integratedTerminal"
+    },
+    {
+      "name": "Train",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/scripts/train.py",
+      "console": "integratedTerminal"
     }
   ]
 }

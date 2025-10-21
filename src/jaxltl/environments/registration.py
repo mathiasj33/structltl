@@ -4,7 +4,7 @@ from jaxltl.environments.zone_env.zone_env import ZoneEnv
 _name_to_env = {"ZoneEnv": ZoneEnv}
 
 
-def make(name: str) -> tuple[Environment, EnvParams]:
+def make(name: str, **kwargs) -> tuple[Environment, EnvParams]:
     """Create an environment by name.
 
     Returns:
@@ -12,5 +12,5 @@ def make(name: str) -> tuple[Environment, EnvParams]:
     env_class = _name_to_env.get(name)
     if not env_class:
         raise ValueError(f"Unknown environment name: {name}")
-    env = env_class()
+    env = env_class(**kwargs)
     return env, env.default_params  # type: ignore

@@ -7,6 +7,8 @@ The agent is equipped with a lidar sensor that detects the distance to the
 nearest zone of each color in a set of evenly spaced angular bins.
 """
 
+import dataclasses
+from dataclasses import dataclass
 from typing import Any, NamedTuple, override
 
 import equinox as eqx
@@ -15,28 +17,30 @@ import jax.numpy as jnp
 from jax import lax
 
 from jaxltl.environments import environment, spaces
+from jaxltl.environments.renderer.renderer import BaseRenderer
 
 _EPS = 1e-8
 _MAX_SAMPLING_ITERS = 1000
 
 
+@dataclass(frozen=True)
 class EnvParams(environment.EnvParams):
     # World
-    agent_radius: jax.Array  # float
-    world_size: jax.Array  # float
-    spawn_size: jax.Array  # float
+    agent_radius: float
+    world_size: float
+    spawn_size: float
     # Zones
-    zone_radius: jax.Array  # float
+    zone_radius: float
     zones_per_color: int
-    keepout_radius: jax.Array  # float
+    keepout_radius: float
     # Lidar
     num_lidar_bins: int
     # Physics
-    dt: jax.Array  # float
-    drag: jax.Array  # float
-    max_speed: jax.Array  # float
-    max_force: jax.Array  # float
-    max_angular_velocity: jax.Array  # float
+    dt: float
+    drag: float
+    max_speed: float
+    max_force: float
+    max_angular_velocity: float
 
 
 class EnvState(eqx.Module):
@@ -60,28 +64,28 @@ class ObsFeatures(NamedTuple):
 
 class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
     default_params = EnvParams(
-        max_steps_in_episode=jnp.int32(1000),
-        agent_radius=jnp.float32(0.1),
-        world_size=jnp.float32(6.6),
-        spawn_size=jnp.float32(5.0),
-        zone_radius=jnp.float32(0.4),
+        max_steps_in_episode=1000,
+        agent_radius=0.1,
+        world_size=6.6,
+        spawn_size=5.0,
+        zone_radius=0.4,
         zones_per_color=2,
-        keepout_radius=jnp.float32(0.55),
+        keepout_radius=0.55,
         num_lidar_bins=16,
-        dt=jnp.float32(0.05),
-        drag=jnp.float32(0.08),
-        max_speed=jnp.float32(3.0),
-        max_force=jnp.float32(2.0),
-        max_angular_velocity=jnp.float32(3.0),
+        dt=0.05,
+        drag=0.08,
+        max_speed=3.0,
+        max_force=2.0,
+        max_angular_velocity=3.0,
     )
     propositions = ("red", "green", "purple", "yellow")
     reset_to_initial_state = True  # the reset function is expensive, so we avoid it
 
-    def __init__(self):
+    def __init__(self, **kwargs):
+        params = dataclasses.asdict(self.default_params) | kwargs
         super().__init__(
-            default_params=self.default_params,
+            default_params=EnvParams(**params),
             propositions=self.propositions,
-            reset_to_initial_state=self.reset_to_initial_state,
         )
 
     @override
@@ -315,8 +319,11 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
         angular_velocity = target_angular_velocity
 
-        reward = jnp.zeros((), dtype=jnp.float32)
-        terminated = jnp.zeros((), dtype=jnp.bool)
+        props = self.compute_propositions(state, params)
+        reward = jnp.where(props[0], 1.0, 0.0)
+
+        # terminated = jnp.zeros((), dtype=jnp.bool)
+        terminated = reward > 0.0
         next_state = EnvState(
             position=position,
             velocity=velocity,
@@ -357,16 +364,10 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
         return propositions
 
-    @override
-    def unflatten_obs(self, obs: jax.Array) -> ObsFeatures:
-        num_props = len(self.propositions)
-        acceleration = obs[0:2]
-        velocity = obs[2:4]
-        angular_velocity = obs[4:5]
-        lidar = obs[5:].reshape((num_props, -1))
-        return ObsFeatures(
-            acceleration=acceleration,
-            velocity=velocity,
-            angular_velocity=angular_velocity,
-            lidar=lidar,
-        )
+    def get_renderer(
+        self, env_params: EnvParams, **kwargs
+    ) -> BaseRenderer[EnvState, ObsFeatures]:
+        """Returns a renderer for the environment."""
+        from .renderer import Renderer
+
+        return Renderer(env_params, **kwargs)

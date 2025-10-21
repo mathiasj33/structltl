@@ -3,7 +3,8 @@
 Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/environments/environment.py)."""
 
 from abc import abstractmethod
-from typing import Any, NamedTuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import equinox as eqx
 import jax
@@ -11,84 +12,67 @@ import jax.numpy as jnp
 
 from jaxltl.environments.spaces import Space
 
-
-class EnvStateWrapper[TEnvState: eqx.Module, TObsFeatures: NamedTuple](eqx.Module):
-    """Wraps the environment state with additional metadata."""
-
-    timestep: jax.Array  # int
-    state: TEnvState
-    initial_state: TEnvState
-    initial_obs: TObsFeatures
+if TYPE_CHECKING:
+    from jaxltl.environments.renderer.renderer import BaseRenderer
 
 
-class EnvParams(eqx.Module):
-    """Base class for environment parameters."""
+@dataclass(frozen=True)
+class EnvParams:
+    """Base class for environment parameters.
 
-    max_steps_in_episode: jax.Array  # int
+    Note: changing environment parameters will require recompilation of jitted functions.
+    """
+
+    max_steps_in_episode: int
 
 
-class EnvObservation(eqx.Module):
+class EnvObservation[TObsFeatures: NamedTuple](NamedTuple):
     """Environment observation."""
 
-    features: jax.Array  # shape: (num_features,)
+    features: TObsFeatures
     propositions: jax.Array  # shape: (num_propositions,) boolean
 
 
-class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](eqx.Module):
+class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple):
     """Environment transition."""
 
-    state: EnvStateWrapper[TEnvState, TObsFeatures]
-    observation: EnvObservation
+    state: TEnvState
+    observation: EnvObservation[TObsFeatures]
     reward: jax.Array  # shape: ()
     terminated: jax.Array  # shape: () boolean
     truncated: jax.Array  # shape: () boolean
-    terminal_observation: EnvObservation  # used if done
+    terminal_observation: EnvObservation[TObsFeatures]  # used if done
     info: dict[Any, Any]
+
+    @property
+    def done(self) -> jax.Array:
+        """Whether the episode is done (terminated or truncated)."""
+        return jnp.logical_or(self.terminated, self.truncated)
 
 
 class Environment[
     TEnvState: eqx.Module,
-    TEnvParams: eqx.Module,
+    TEnvParams,
     TObsFeatures: NamedTuple,
 ](eqx.Module):
-    """Abstract base class for environments. Handles truncation and auto-resets."""
+    """Abstract base class for environments."""
 
     default_params: TEnvParams
     # Maps indices in obs.propositions to names
     propositions: tuple[str, ...]
-    # Environments always auto-reset on termination or truncation.
-
-    # When `reset_to_initial_state` is True, the environment resets to the same initial
-    # state every time. This is computationally cheaper, but limits the distribution of
-    # initial states that the agent is exposed to. This is the strategy used in Brax.
-
-    # When False, the environment samples a new initial state every time. This is more
-    # computationally expensive, since both the next state and an initial state need to
-    # be computed at every step (due to requirements of JIT compilation). However, it can
-    # be beneficial for training. This is the strategy used in Gymnax.
-    reset_to_initial_state: bool
 
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
     def reset(
-        self, key: jax.Array, params: TEnvParams | None = None
-    ) -> tuple[EnvStateWrapper[TEnvState, TObsFeatures], EnvObservation]:
+        self, key: jax.Array, params: TEnvParams
+    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         """Performs resetting of environment."""
-        if params is None:
-            params = self.default_params
-
         state, obs = self.reset_env(key, params)
-        wrapper = EnvStateWrapper(
-            timestep=jnp.array(0, dtype=jnp.int32),
-            state=state,
-            initial_state=state,
-            initial_obs=obs,
-        )
         obs = EnvObservation(
-            features=self.flatten_obs(obs),
+            features=obs,
             propositions=self.compute_propositions(state, params),
         )
-        return wrapper, obs
+        return state, obs
 
     @abstractmethod
     def reset_env(
@@ -102,61 +86,28 @@ class Environment[
     def step(
         self,
         key: jax.Array,
-        state: EnvStateWrapper[TEnvState, TObsFeatures],
+        state: TEnvState,
         action: int | float | jax.Array,
-        params: TEnvParams | None = None,
-    ) -> EnvTransition:
+        params: TEnvParams,
+    ) -> EnvTransition[TEnvState, TObsFeatures]:
         """Performs step transitions in the environment."""
-        if params is None:
-            params = self.default_params
-
-        # Step
-        key_step, key_reset = jax.random.split(key)
         next_state, obs, reward, terminated, info = self.step_env(
-            key_step, state.state, action, params
-        )
-        next_state = EnvStateWrapper(
-            timestep=state.timestep + 1,
-            state=next_state,
-            initial_state=state.initial_state,
-            initial_obs=state.initial_obs,
+            key, state, action, params
         )
         obs = EnvObservation(
-            features=self.flatten_obs(obs),
-            propositions=self.compute_propositions(next_state.state, params),
+            features=obs,
+            propositions=self.compute_propositions(next_state, params),
         )
-
-        if self.reset_to_initial_state:
-            state_re, obs_re = state.initial_state, state.initial_obs
-        else:
-            state_re, obs_re = self.reset_env(key_reset, params)
-        state_re = EnvStateWrapper(
-            timestep=jnp.array(0, dtype=jnp.int32),
-            state=state_re,
-            initial_state=state_re,
-            initial_obs=obs_re,
-        )
-        obs_re = EnvObservation(
-            features=self.flatten_obs(obs_re),
-            propositions=self.compute_propositions(state_re.state, params),
-        )
-
-        # Truncation
-        truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore
-
-        # Auto-reset environment based on termination
-        done = jnp.logical_or(terminated, truncated)
         transition = EnvTransition(
-            state=jax.lax.cond(done, lambda: state_re, lambda: next_state),
-            observation=jax.lax.cond(done, lambda: obs_re, lambda: obs),
+            state=next_state,
+            observation=obs,
             reward=reward,
             terminated=terminated,
-            truncated=truncated,
+            truncated=jnp.array(False, dtype=jnp.bool),
             terminal_observation=obs,
             info=info,
         )
-
-        return transition
+        return jax.lax.stop_gradient(transition)
 
     @abstractmethod
     def step_env(
@@ -202,12 +153,13 @@ class Environment[
         """Environment name."""
         return type(self).__name__
 
-    @staticmethod
-    def flatten_obs(obs: TObsFeatures) -> jax.Array:
-        """Flattens observation NamedTuple into a single array."""
-        return jnp.concatenate([jnp.ravel(v) for v in obs])
+    def unwrapped(self, state: Any) -> TEnvState:
+        """Returns the unwrapped environment state."""
+        return state
 
     @abstractmethod
-    def unflatten_obs(self, obs: jax.Array) -> TObsFeatures:
-        """Unflattens a single array into TObsFeatures."""
+    def get_renderer(
+        self, params: TEnvParams, **kwargs
+    ) -> "BaseRenderer[TEnvState, TObsFeatures]":
+        """Returns a renderer for the environment."""
         pass

@@ -1,0 +1,8 @@
+defaults:
+  - experiment: deepltl/zones
+  - hydra: default
+  - _self_
+
+run: tmp
+num_seeds: 1
+use_gpu: true # use gpu if available
