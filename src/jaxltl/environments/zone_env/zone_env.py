@@ -319,11 +319,9 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
         angular_velocity = target_angular_velocity
 
-        props = self.compute_propositions(state, params)
-        reward = jnp.where(props[0], 1.0, 0.0)
+        reward = jnp.zeros((), dtype=jnp.float32)
+        terminated = jnp.zeros((), dtype=jnp.bool)
 
-        # terminated = jnp.zeros((), dtype=jnp.bool)
-        terminated = reward > 0.0
         next_state = EnvState(
             position=position,
             velocity=velocity,
