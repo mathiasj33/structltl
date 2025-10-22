@@ -131,9 +131,3 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
             self.render(
                 env.unwrapped(state), env.unwrapped(previous_state), obs.features, alpha
             )
-            props = {
-                env.propositions[i]
-                for i, p in enumerate(obs.propositions.tolist())
-                if p
-            }
-            # print(props)

@@ -7,14 +7,23 @@ from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
 from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
 from jaxltl.environments import environment
 from jaxltl.environments.renderer.renderer import BaseRenderer
-from jaxltl.environments.wrappers.auto_reset_wrapper import AutoResetWrapper
+from jaxltl.environments.wrappers.auto_reset_wrapper import (
+    AutoResetWrapper,
+    ResetStrategy,
+)
+from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
+    PrecomputedResetWrapper,
+)
 
 
 def main():
     env, params = jaxltl.make("ZoneEnv")
+    env = PrecomputedResetWrapper(
+        env, params, jaxltl.DATA_DIR / "ZoneEnv/sampled_resets_test.eqx"
+    )
     sampler = ReachSampler(num_propositions=4, max_length=5)
     env = SequenceWrapper(env, sampler)
-    env = AutoResetWrapper(env, reset_to_initial_state=False)
+    env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
 
     model = DeepLTLModel(
         env.observation_space(params).shape[0],
