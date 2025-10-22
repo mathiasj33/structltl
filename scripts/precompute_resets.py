@@ -46,8 +46,8 @@ def main(cfg: DictConfig):
     suffix = "train" if cfg["train"] else "test"
     file = folder / f"sampled_resets_{suffix}.eqx"
     logger.info(f"Saving to {file}")
-    eqx_utils.save_with_metadata(
-        file, states, {"batch_dim": num_batch_resets * cfg.num_envs}
+    eqx_utils.save(
+        file, states, metadata={"batch_dim": num_batch_resets * cfg.num_envs}
     )
 
 
