@@ -20,7 +20,8 @@ def main(cfg: DictConfig):
     num_batch_resets = math.ceil(cfg.num_resets / cfg.num_envs)
     env, params = jaxltl.make(cfg.env)
     vmap_reset = jax.vmap(env.reset, in_axes=(0, None))
-    key = jax.random.key(0)
+    seed = 0 if cfg.train else 42
+    key = jax.random.key(seed)
 
     @jax.jit
     def body(key, _):
@@ -43,7 +44,7 @@ def main(cfg: DictConfig):
 
     folder = jaxltl.DATA_DIR / cfg.env
     folder.mkdir(parents=True, exist_ok=True)
-    suffix = "train" if cfg["train"] else "test"
+    suffix = "train" if cfg.train else "test"
     file = folder / f"sampled_resets_{suffix}.eqx"
     logger.info(f"Saving to {file}")
     eqx_utils.save(
