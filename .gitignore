@@ -1,5 +1,7 @@
 local/
 runs/
+*.zip
+data/
 
 # pixi environments
 .pixi
