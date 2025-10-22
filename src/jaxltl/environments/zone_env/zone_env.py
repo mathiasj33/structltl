@@ -9,7 +9,7 @@ nearest zone of each color in a set of evenly spaced angular bins.
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Any, NamedTuple, override
+from typing import TYPE_CHECKING, Any, NamedTuple, override
 
 import equinox as eqx
 import jax
@@ -17,7 +17,9 @@ import jax.numpy as jnp
 from jax import lax
 
 from jaxltl.environments import environment, spaces
-from jaxltl.environments.renderer.renderer import BaseRenderer
+
+if TYPE_CHECKING:
+    from jaxltl.environments.renderer.renderer import BaseRenderer
 
 _EPS = 1e-8
 _MAX_SAMPLING_ITERS = 1000
@@ -359,7 +361,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
     def get_renderer(
         self, env_params: EnvParams, **kwargs
-    ) -> BaseRenderer[EnvState, ObsFeatures]:
+    ) -> "BaseRenderer[EnvState, ObsFeatures]":
         """Returns a renderer for the environment."""
         from .renderer import Renderer
 
