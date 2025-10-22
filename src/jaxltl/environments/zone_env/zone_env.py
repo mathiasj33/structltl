@@ -79,7 +79,6 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         max_angular_velocity=3.0,
     )
     propositions = ("red", "green", "purple", "yellow")
-    reset_to_initial_state = True  # the reset function is expensive, so we avoid it
 
     def __init__(self, **kwargs):
         params = dataclasses.asdict(self.default_params) | kwargs
@@ -111,24 +110,18 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         )
 
     @override
-    def reset_env(
-        self, key: jax.Array, params: EnvParams
-    ) -> tuple[EnvState, NamedTuple]:
-        key_zones, key_pos, key_angle = jax.random.split(key, 3)
+    def _reset(self, key_angle: jax.Array, params: EnvParams) -> EnvState:
+        key_zones, key_pos, key_angle = jax.random.split(key_angle, 3)
         centers, colors = self._sample_zones(key_zones, params)
-        position = self._sample_agent_position(key_pos, params, centers)
+        agent_pos = self._sample_agent_position(key_pos, params, centers)
+
         velocity = jnp.zeros(2, dtype=jnp.float32)
         acceleration = jnp.zeros(2, dtype=jnp.float32)
-        angle = jax.random.uniform(
-            key_angle,
-            shape=(),
-            minval=-jnp.pi,
-            maxval=jnp.pi,
-        )
+        angle = jax.random.uniform(key_angle, shape=(), minval=-jnp.pi, maxval=jnp.pi)
         angular_velocity = jnp.zeros((), dtype=jnp.float32)
 
-        state = EnvState(
-            position=position,
+        return EnvState(
+            position=agent_pos,
             velocity=velocity,
             angle=angle,
             angular_velocity=angular_velocity,
@@ -136,8 +129,12 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
             zone_centers=centers,
             zone_colors=colors,
         )
-        obs = self._compute_obs(state, params)
-        return state, obs
+
+    @override
+    def _cheap_reset(
+        self, key: jax.Array, state: EnvState, params: EnvParams
+    ) -> EnvState:
+        raise NotImplementedError("Cheap reset is not implemented for ZoneEnv.")
 
     def _sample_zones(
         self, key: jax.Array, params: EnvParams
@@ -223,6 +220,61 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         )
         return pos
 
+    @override
+    def _step(
+        self,
+        key: jax.Array,
+        state: EnvState,
+        action: jax.Array,
+        params: EnvParams,
+    ) -> tuple[EnvState, jax.Array, jax.Array, dict[Any, Any]]:
+        force = jnp.clip(action[0], -params.max_force, params.max_force)
+        target_angular_velocity = jnp.clip(
+            action[1], -params.max_angular_velocity, params.max_angular_velocity
+        )
+        heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
+        acceleration = heading * force
+
+        velocity = state.velocity + acceleration * params.dt
+        velocity *= 1.0 - params.drag
+
+        speed = jnp.linalg.norm(velocity)
+        scaling_factor = jnp.clip(params.max_speed / speed, 0.0, 1.0)
+        velocity: jax.Array = jnp.where(
+            speed > params.max_speed, velocity * scaling_factor, velocity
+        )
+
+        position = state.position + velocity * params.dt
+
+        # If the agent is out of bounds, reflect its velocity and clamp its position
+        # to the edge of the world.
+        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
+        velocity = jnp.where(jnp.abs(position) > half_size, -velocity, velocity)
+        position = jnp.clip(position, -half_size, half_size)
+
+        angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
+        angular_velocity = target_angular_velocity
+
+        reward = jnp.zeros((), dtype=jnp.float32)
+        terminated = jnp.zeros((), dtype=jnp.bool)
+
+        next_state = EnvState(
+            position=position,
+            velocity=velocity,
+            angle=angle,
+            angular_velocity=angular_velocity,
+            acceleration=acceleration,
+            zone_centers=state.zone_centers,
+            zone_colors=state.zone_colors,
+        )
+        return next_state, reward, terminated, {}
+
+    @staticmethod
+    def _wrap_angle(angle: jax.Array) -> jax.Array:
+        """Wrap angles to the (-pi, pi] interval."""
+        return (angle + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
+
+    @override
     def _compute_obs(self, state: EnvState, params: EnvParams) -> ObsFeatures:
         """Compute the observation for a given state."""
         lidar = self._compute_lidar(state, params)
@@ -281,63 +333,6 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         color_ids = jnp.arange(len(self.propositions), dtype=jnp.int32)
         lidar = jax.vmap(compute_color_lidar)(color_ids)  # (C, num_bins)
         return lidar
-
-    @override
-    def step_env(
-        self,
-        key: jax.Array,
-        state: EnvState,
-        action: jax.Array,
-        params: EnvParams,
-    ) -> tuple[EnvState, NamedTuple, jax.Array, jax.Array, dict[Any, Any]]:
-        force = jnp.clip(action[0], -params.max_force, params.max_force)
-        target_angular_velocity = jnp.clip(
-            action[1], -params.max_angular_velocity, params.max_angular_velocity
-        )
-        heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
-        acceleration = heading * force
-
-        velocity = state.velocity + acceleration * params.dt
-        velocity *= 1.0 - params.drag
-
-        speed = jnp.linalg.norm(velocity)
-        scaling_factor = jnp.clip(params.max_speed / speed, 0.0, 1.0)
-        velocity: jax.Array = jnp.where(
-            speed > params.max_speed,
-            velocity * scaling_factor,
-            velocity,
-        )  # type: ignore
-
-        position = state.position + velocity * params.dt
-
-        # If the agent is out of bounds, reflect its velocity and clamp its position
-        # to the edge of the world.
-        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
-        velocity = jnp.where(jnp.abs(position) > half_size, -velocity, velocity)
-        position = jnp.clip(position, -half_size, half_size)
-
-        angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
-        angular_velocity = target_angular_velocity
-
-        reward = jnp.zeros((), dtype=jnp.float32)
-        terminated = jnp.zeros((), dtype=jnp.bool)
-
-        next_state = EnvState(
-            position=position,
-            velocity=velocity,
-            angle=angle,
-            angular_velocity=angular_velocity,
-            acceleration=acceleration,
-            zone_centers=state.zone_centers,
-            zone_colors=state.zone_colors,
-        )
-        next_obs = self._compute_obs(next_state, params)
-        return next_state, next_obs, reward, terminated, {}
-
-    @staticmethod
-    def _wrap_angle(angle: jax.Array) -> jax.Array:
-        """Wrap angles to the (-pi, pi] interval."""
-        return (angle + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
 
     @override
     def compute_propositions(self, state: EnvState, params: EnvParams) -> jax.Array:

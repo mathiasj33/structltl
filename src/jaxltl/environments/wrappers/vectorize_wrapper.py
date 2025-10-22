@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import equinox as eqx
 import jax
@@ -28,6 +28,12 @@ class VectorizeWrapper[
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         return super().reset(key, params)
 
+    @partial(jax.vmap, in_axes=(None, 0, None))
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        return super().cheap_reset(key, state, params)
+
     @partial(jax.vmap, in_axes=(None, 0, 0, 0, None))
     def step(
         self,
@@ -37,6 +43,3 @@ class VectorizeWrapper[
         params: TEnvParams,
     ) -> EnvTransition[TEnvState, TObsFeatures]:
         return super().step(key, state, action, params)
-
-    def unwrapped(self, state: Any) -> TEnvState:
-        return self._env.unwrapped(state)

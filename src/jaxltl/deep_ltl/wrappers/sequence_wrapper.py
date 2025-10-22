@@ -25,7 +25,7 @@ class SequenceObservation[TObsFeatures: NamedTuple](EnvObservation[TObsFeatures]
 
     @classmethod
     def from_obs(cls, obs: EnvObservation[TObsFeatures], seq: ReachAvoidSequence):
-        return cls(features=obs.features, propositions=obs.propositions, seq=seq)
+        return cls(features=obs.features, seq=seq)
 
 
 class SequenceWrapper[
@@ -52,11 +52,25 @@ class SequenceWrapper[
     ) -> tuple[SequenceState[TEnvState], SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
         state, obs = super().reset(reset_key, params)
-        state = SequenceState(
-            state=state,
-            seq=self.sequence_sampler.sample(sample_key),
-        )
+        state = self._wrap_reset_state(state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
+
+    @eqx.filter_jit
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[SequenceState[TEnvState], SequenceObservation[TObsFeatures]]:
+        reset_key, sample_key = jax.random.split(key)
+        state, obs = super().cheap_reset(reset_key, state, params)
+        new_state = self._wrap_reset_state(state, sample_key)
+        return new_state, SequenceObservation.from_obs(obs, new_state.seq)
+
+    def _wrap_reset_state(
+        self, state: TEnvState, key: jax.Array
+    ) -> SequenceState[TEnvState]:
+        return SequenceState(
+            state=state,
+            seq=self.sequence_sampler.sample(key),
+        )
 
     @eqx.filter_jit
     def step(
@@ -71,9 +85,8 @@ class SequenceWrapper[
             state=transition.state,
             seq=state.seq,
         )
-        props = transition.observation.propositions
         current = state.seq.reach[0]
-        reached = props[current - 1]  # propositions are 1-indexed
+        reached = transition.propositions[current - 1]  # propositions are 1-indexed
         reward = jax.lax.cond(reached, lambda: 1.0, lambda: 0.0)
         return EnvTransition(
             state=new_state,
@@ -86,6 +99,7 @@ class SequenceWrapper[
             terminal_observation=SequenceObservation.from_obs(
                 transition.terminal_observation, new_state.seq
             ),
+            propositions=transition.propositions,
             info=transition.info,
         )
 

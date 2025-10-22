@@ -27,10 +27,9 @@ class EnvParams:
 
 
 class EnvObservation[TObsFeatures: NamedTuple](eqx.Module):
-    """Environment observation."""
+    """Environment observation. Can be extended by wrappers to add additional fields."""
 
     features: TObsFeatures
-    propositions: jax.Array  # shape: (num_propositions,) boolean
 
 
 class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple):
@@ -42,6 +41,7 @@ class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple)
     terminated: jax.Array  # shape: () boolean
     truncated: jax.Array  # shape: () boolean
     terminal_observation: EnvObservation[TObsFeatures]  # used if done
+    propositions: jax.Array  # shape: (num_propositions,) boolean
     info: dict[Any, Any]
 
     @property
@@ -67,18 +67,31 @@ class Environment[
         self, key: jax.Array, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         """Performs resetting of environment."""
-        state, obs = self.reset_env(key, params)
-        obs = EnvObservation(
-            features=obs,
-            propositions=self.compute_propositions(state, params),
-        )
-        return state, obs
+        state = self._reset(key, params)
+        return state, self.compute_obs(state, params)
 
     @abstractmethod
-    def reset_env(
-        self, key: jax.Array, params: TEnvParams
-    ) -> tuple[TEnvState, TObsFeatures]:
+    def _reset(self, key: jax.Array, params: TEnvParams) -> TEnvState:
         """Environment-specific reset."""
+        pass
+
+    @eqx.filter_jit
+    @eqx.debug.assert_max_traces(max_traces=1)
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        """Performs a cheap reset of the environment given the current state.
+        Since JIT requires resetting on every step, this method can be used to implement
+        a faster reset to improve performance. See AutoResetWrapper for further details."""
+
+        state = self._cheap_reset(key, state, params)
+        return state, self.compute_obs(state, params)
+
+    @abstractmethod
+    def _cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> TEnvState:
+        """Environment-specific cheap reset."""
         pass
 
     @eqx.filter_jit
@@ -91,13 +104,9 @@ class Environment[
         params: TEnvParams,
     ) -> EnvTransition[TEnvState, TObsFeatures]:
         """Performs step transitions in the environment."""
-        next_state, obs, reward, terminated, info = self.step_env(
-            key, state, action, params
-        )
-        obs = EnvObservation(
-            features=obs,
-            propositions=self.compute_propositions(next_state, params),
-        )
+        next_state, reward, terminated, info = self._step(key, state, action, params)
+        obs = self.compute_obs(next_state, params)
+        propositions = self.compute_propositions(next_state, params)
         transition = EnvTransition(
             state=next_state,
             observation=obs,
@@ -105,20 +114,32 @@ class Environment[
             terminated=terminated,
             truncated=jnp.array(False, dtype=jnp.bool),
             terminal_observation=obs,
+            propositions=propositions,
             info=info,
         )
         return jax.lax.stop_gradient(transition)
 
     @abstractmethod
-    def step_env(
+    def _step(
         self,
         key: jax.Array,
         state: TEnvState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> tuple[TEnvState, TObsFeatures, jax.Array, jax.Array, dict[Any, Any]]:
+    ) -> tuple[TEnvState, jax.Array, jax.Array, dict[Any, Any]]:
         """Environment-specific step transition.
-        Returns: next_state, observation, reward, terminated, info"""
+        Returns: next_state, reward, terminated, info"""
+        pass
+
+    def compute_obs(
+        self, state: TEnvState, params: TEnvParams
+    ) -> EnvObservation[TObsFeatures]:
+        """Compute the observation for a given state."""
+        return EnvObservation(features=self._compute_obs(state, params))
+
+    @abstractmethod
+    def _compute_obs(self, state: TEnvState, params: TEnvParams) -> TObsFeatures:
+        """Compute the environment-specific observation for a given state."""
         pass
 
     @abstractmethod

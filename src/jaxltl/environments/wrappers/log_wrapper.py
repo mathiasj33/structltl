@@ -32,15 +32,24 @@ class LogWrapper[
     @eqx.filter_jit
     def reset(
         self, key: jax.Array, params: TEnvParams
-    ) -> tuple[LogEnvState, EnvObservation[TObsFeatures]]:
+    ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
         state, obs = super().reset(key, params)
-        log_state = LogEnvState(
+        return self._wrap_reset_state(state), obs
+
+    @eqx.filter_jit
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
+        state, obs = super().cheap_reset(key, state, params)
+        return self._wrap_reset_state(state), obs
+
+    def _wrap_reset_state(self, state: TEnvState) -> LogEnvState[TEnvState]:
+        return LogEnvState(
             state=state,
             step=jnp.array(0, dtype=jnp.int32),
             total_step=jnp.array(0, dtype=jnp.int32),
             ret=jnp.array(0.0, dtype=jnp.float32),
         )
-        return log_state, obs
 
     @eqx.filter_jit
     def step(
@@ -73,6 +82,7 @@ class LogWrapper[
             terminated=transition.terminated,
             truncated=transition.truncated,
             terminal_observation=transition.terminal_observation,
+            propositions=transition.propositions,
             info=info,
         )
 

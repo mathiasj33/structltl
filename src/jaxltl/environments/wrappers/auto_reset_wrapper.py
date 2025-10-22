@@ -1,3 +1,4 @@
+from enum import StrEnum, auto
 from typing import NamedTuple
 
 import equinox as eqx
@@ -15,44 +16,69 @@ class WrappedState[TEnvState: eqx.Module, TObsFeatures: NamedTuple](eqx.Module):
     initial_obs: EnvObservation[TObsFeatures]
 
 
+class ResetStrategy(StrEnum):
+    INITIAL = auto()
+    CHEAP = auto()
+    FULL = auto()
+
+
 class AutoResetWrapper[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
 ](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
-    """Automatically reset the environment on termination or truncation."""
+    """Automatically reset the environment on termination or truncation.
 
-    # When `reset_to_initial_state` is True, the environment resets to the same initial
-    # state every time. This is computationally cheaper, but limits the distribution of
-    # initial states that the agent is exposed to. This is the strategy used in Brax.
+    Due to JIT compilation requirements, we have to compute a new reset state at every
+    step of the environment. Since this can be computationally expensive in some environments
+    (e.g. sampling layouts etc.), we provide three different reset strategies:
 
-    # When False, the environment samples a new initial state every time. This is more
-    # computationally expensive, since both the next state and an initial state need to
-    # be computed at every step (due to requirements of JIT compilation). However, it can
-    # be beneficial for training. This is the strategy used in Gymnax.
-    reset_to_initial_state: bool
+        - Initial: Always reset to the initial state obtained from the first reset call.
+        - Cheap: Use the environment's cheap_reset method to compute a new state.
+        - Full: Use the full reset method to compute a new state.
+
+    Brax by default uses the 'Initial' strategy, whereas Gymnax environments use 'Full'.
+
+    Note also that the StaticResetWrapper can be used to always reset the environment to
+    a randomly sampled state from a fixed set of pre-computed states. This can be used
+    together with the 'Full' reset strategy without incurring the computational cost
+    of computing a new reset state from scratch every time.
+    """
+
+    reset_strategy: ResetStrategy
 
     def __init__(
         self,
         env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
         | Environment[TEnvState, TEnvParams, TObsFeatures],
-        reset_to_initial_state: bool,
+        reset_strategy: ResetStrategy,
     ):
         super().__init__(env)
-        self.reset_to_initial_state = reset_to_initial_state
+        self.reset_strategy = reset_strategy
 
     @eqx.filter_jit
     def reset(
         self, key: jax.Array, params: TEnvParams
     ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
         state, obs = super().reset(key, params)
-        wrapper = WrappedState(
+        return self._wrap_reset_state(state, obs), obs
+
+    @eqx.filter_jit
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
+        state, obs = super().cheap_reset(key, state, params)
+        return self._wrap_reset_state(state, obs), obs
+
+    def _wrap_reset_state(
+        self, state: TEnvState, obs: EnvObservation[TObsFeatures]
+    ) -> WrappedState[TEnvState, TObsFeatures]:
+        return WrappedState(
             timestep=jnp.array(0, dtype=jnp.int32),
             state=state,
             initial_state=state,
             initial_obs=obs,
         )
-        return wrapper, obs
 
     @eqx.filter_jit
     def step(
@@ -70,16 +96,21 @@ class AutoResetWrapper[
             initial_state=state.initial_state,
             initial_obs=state.initial_obs,
         )
-        if self.reset_to_initial_state:
-            state_re, obs_re = state.initial_state, state.initial_obs
-            state_re = WrappedState(
-                timestep=jnp.array(0, dtype=jnp.int32),
-                state=state_re,
-                initial_state=state.initial_state,
-                initial_obs=state.initial_obs,
-            )
-        else:
-            state_re, obs_re = self.reset(key_reset, params)
+        match self.reset_strategy:
+            case ResetStrategy.INITIAL:
+                state_re, obs_re = state.initial_state, state.initial_obs
+                state_re = WrappedState(
+                    timestep=jnp.array(0, dtype=jnp.int32),
+                    state=state_re,
+                    initial_state=state.initial_state,
+                    initial_obs=state.initial_obs,
+                )
+            case ResetStrategy.CHEAP:
+                state_re, obs_re = self.cheap_reset(
+                    key_reset, self._env.unwrapped(state.initial_state), params
+                )
+            case ResetStrategy.FULL:
+                state_re, obs_re = self.reset(key_reset, params)
 
         # Truncation
         truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore
@@ -95,6 +126,7 @@ class AutoResetWrapper[
             terminated=transition.terminated,
             truncated=truncated,
             terminal_observation=transition.terminal_observation,
+            propositions=transition.propositions,
             info=transition.info,
         )
         return transition

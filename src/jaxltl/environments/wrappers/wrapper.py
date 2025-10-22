@@ -2,7 +2,6 @@
 
 Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/wrappers/purerl.py)."""
 
-from abc import abstractmethod
 from typing import Any, NamedTuple
 
 import equinox as eqx
@@ -30,11 +29,19 @@ class EnvWrapper[
     ):
         self._env = env
 
+    @eqx.filter_jit
     def reset(
         self, key: jax.Array, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         return self._env.reset(key, params)
 
+    @eqx.filter_jit
+    def cheap_reset(
+        self, key: jax.Array, state: TEnvState, params: TEnvParams
+    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        return self._env.cheap_reset(key, state, params)
+
+    @eqx.filter_jit
     def step(
         self,
         key: jax.Array,
@@ -48,7 +55,6 @@ class EnvWrapper[
     def __getattr__(self, name):
         return getattr(self._env, name)
 
-    @abstractmethod
     def unwrapped(self, state: Any) -> TEnvState:
         """Returns the unwrapped environment state."""
-        pass
+        return self._env.unwrapped(state)
