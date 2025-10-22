@@ -1,0 +1,8 @@
+defaults:
+  - hydra: no_output
+  - _self_
+
+env: ZoneEnv
+num_resets: 1e6
+num_envs: 2048
+train: true

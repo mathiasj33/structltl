@@ -1,10 +1,9 @@
 # @package __global__
 
 defaults:
+  - /env: zone_env
   - /alg: deepltl
   - /rl_alg: ppo
-
-env: ZoneEnv
 
 model:
   actor:

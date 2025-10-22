@@ -1,3 +1,9 @@
+"""Main training entry point.
+
+Uses Hydra for configuration management. See conf/train.yaml, or run
+`python train.py --help` for details.
+"""
+
 import logging
 import time
 
@@ -9,10 +15,15 @@ import pandas as pd
 from omegaconf import DictConfig
 
 import jaxltl
+from jaxltl import DATA_DIR, eqx_utils
 from jaxltl.deep_ltl.model import DeepLTLModel
 from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
 from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
+from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
+from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
+    PrecomputedResetWrapper,
+)
 from jaxltl.eqx_utils.training import ensemble_to_list
 from jaxltl.rl.algorithm import RLAlgorithm
 
@@ -25,10 +36,13 @@ def main(cfg: DictConfig):
         jax.config.update("jax_default_device", jax.devices("cpu")[0])
         logger.info("Using CPU for training")
 
-    env, env_params = jaxltl.make(cfg.env)
+    env, env_params = jaxltl.make(cfg.env.name)
+    if cfg.env.use_precomputed_resets:
+        resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
+        env = PrecomputedResetWrapper(env, env_params, resets_path)
     sampler = ReachSampler(num_propositions=4, max_length=5)
     env = SequenceWrapper(env, sampler)
-    env = AutoResetWrapper(env, reset_to_initial_state=True)  # TODO
+    env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
     env = LogWrapper(env)
     env = VectorizeWrapper(env)
 
@@ -83,7 +97,7 @@ def main(cfg: DictConfig):
     df.to_csv("logs.csv", index=False)
 
     model = ensemble_to_list(models, cfg.num_seeds)[0]
-    eqx.tree_serialise_leaves("model.eqx", model)
+    eqx_utils.save("model.eqx", model)
     logger.info("Model saved to model.eqx")
 
 

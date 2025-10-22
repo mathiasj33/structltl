@@ -39,7 +39,7 @@ class AutoResetWrapper[
 
     Brax by default uses the 'Initial' strategy, whereas Gymnax environments use 'Full'.
 
-    Note also that the StaticResetWrapper can be used to always reset the environment to
+    Note also that the PrecomputedResetWrapper can be used to always reset the environment to
     a randomly sampled state from a fixed set of pre-computed states. This can be used
     together with the 'Full' reset strategy without incurring the computational cost
     of computing a new reset state from scratch every time.
