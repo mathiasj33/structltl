@@ -16,7 +16,6 @@ from omegaconf import DictConfig
 
 import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
-from jaxltl.deep_ltl.model import DeepLTLModel
 from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
 from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
@@ -25,9 +24,13 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
 from jaxltl.eqx_utils.training import ensemble_to_list
+from jaxltl.hydra_utils.utils import register_custom_resolvers
+from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
 
 logger = logging.getLogger(__name__)
+
+register_custom_resolvers()
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="train")
@@ -51,14 +54,11 @@ def main(cfg: DictConfig):
     split = jax.vmap(jax.random.split)(keys)
     keys, model_keys = split[:, 0], split[:, 1]
 
-    make_models = eqx.filter_vmap(
-        DeepLTLModel, in_axes=(None, None, None, None, None, 0)
-    )
+    make_models = eqx.filter_vmap(build_model, in_axes=(None, None, None, None, 0))
     models = make_models(
+        cfg.model,
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
-        jax.nn.tanh,
-        32,
         4,
         model_keys,
     )
@@ -99,6 +99,23 @@ def main(cfg: DictConfig):
     model = ensemble_to_list(models, cfg.num_seeds)[0]
     eqx_utils.save("model.eqx", model)
     logger.info("Model saved to model.eqx")
+
+
+def build_model(
+    model_cfg: DictConfig,
+    obs_dim: int,
+    action_dim: int,
+    num_propositions: int,
+    key: jax.Array,
+) -> ActorCritic:
+    model: ActorCritic = hydra.utils.instantiate(
+        model_cfg,
+        obs_dim=obs_dim,
+        action_dim=action_dim,
+        num_propositions=num_propositions,
+        key=key,
+    )
+    return model
 
 
 if __name__ == "__main__":

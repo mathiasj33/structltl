@@ -10,6 +10,8 @@ from jaxltl.networks.network_utils import make_linear
 
 
 class MLP(CallableModule):
+    """Multi-layer perceptron (MLP) network."""
+
     layers: list[eqx.nn.Linear]
     activation: Callable[[jax.Array], jax.Array]
     final_layer_activation: bool
@@ -20,21 +22,19 @@ class MLP(CallableModule):
         out_size: int,
         hidden_sizes: list[int],
         activation: Callable[[jax.Array], jax.Array] = jax.nn.relu,
-        weight_init: Callable[..., Initializer] = jax.nn.initializers.orthogonal,  # noqa: B008
-        bias_init: Initializer = jax.nn.initializers.zeros,
+        weight_init: Initializer | None = jax.nn.initializers.orthogonal(),  # noqa: B008
+        bias_init: Initializer | None = jax.nn.initializers.zeros,
         *,
-        final_layer_activation: bool = False,
-        weight_init_scales: list[float] | None = None,
+        final_layer_activation: bool = True,
         key: jax.Array,
     ):
         sizes = [in_size] + hidden_sizes + [out_size]
         linear_keys = jax.random.split(key, len(sizes) - 1)
-        weight_init_scales = weight_init_scales or [1.0] * len(sizes)
         self.layers = [
             make_linear(
                 sizes[i],
                 sizes[i + 1],
-                weight_init(scale=weight_init_scales[i]),
+                weight_init,
                 bias_init,
                 key=linear_keys[i],
             )
@@ -44,6 +44,7 @@ class MLP(CallableModule):
         self.final_layer_activation = final_layer_activation
 
     @override
+    @eqx.filter_jit
     def __call__(self, x):
         for i, layer in enumerate(self.layers):
             x = layer(x)

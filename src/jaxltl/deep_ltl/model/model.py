@@ -1,62 +1,58 @@
-from collections.abc import Callable
 from typing import NamedTuple, override
 
 import distrax
+import hydra
 import jax
 import jax.numpy as jnp
 from equinox import nn
 from jaxtyping import PyTree
+from omegaconf import DictConfig
 
+from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
 from jaxltl.networks.mlp import MLP
 from jaxltl.rl.actor_critic import ActorCritic
 
 
 class DeepLTLModel(ActorCritic):
-    actor: MLP
-    critic: MLP
+    env_net: MLP
     embedding: nn.Embedding
+    actor: ContinuousActor
+    critic: MLP
 
     def __init__(
         self,
         obs_dim: int,
         action_dim: int,
-        activation: Callable[[jax.Array], jax.Array],
-        embedding_dim: int,
         num_propositions: int,
         key: jax.Array,
+        **kwargs,
     ):
-        key, embed_key = jax.random.split(key)
+        config = DictConfig(kwargs)
+        env_key, actor_key, critic_key, embedding_key = jax.random.split(key, 4)
+        self.env_net = hydra.utils.instantiate(
+            config.env_net, in_size=obs_dim, key=env_key
+        )
+        embedding_dim = config.embedding_dim
         self.embedding = nn.Embedding(
             num_embeddings=num_propositions,
             embedding_size=embedding_dim,
-            key=embed_key,
+            key=embedding_key,
         )
-        actor_key, critic_key = jax.random.split(key, 2)
-        self.actor = MLP(
-            in_size=obs_dim + embedding_dim,
-            out_size=action_dim,
-            hidden_sizes=[64, 64],
-            activation=activation,
-            final_layer_activation=False,
-            weight_init_scales=[jnp.sqrt(2).item(), jnp.sqrt(2).item(), 0.01],
-            key=actor_key,
+        joint_dim = config.env_net.out_size + embedding_dim
+        self.actor = hydra.utils.instantiate(
+            config.actor, in_size=joint_dim, action_dim=action_dim, key=actor_key
         )
-        self.critic = MLP(
-            in_size=obs_dim + embedding_dim,
+        self.critic = hydra.utils.instantiate(
+            config.critic,
+            in_size=joint_dim,
             out_size=1,
-            hidden_sizes=[64, 64],
-            activation=activation,
             final_layer_activation=False,
-            weight_init_scales=[jnp.sqrt(2).item(), jnp.sqrt(2).item(), 1.0],
             key=critic_key,
         )
 
     @override
     def _get_action(self, features: jax.Array) -> distrax.Distribution:
-        actor_mean = jax.vmap(self.actor)(features)
-        # pi = distrax.Categorical(logits=actor_mean)
-        pi = distrax.MultivariateNormalDiag(loc=actor_mean)
-        return pi
+        return self.actor(features)
 
     @override
     def _get_value(self, features: jax.Array) -> jax.Array:
@@ -66,9 +62,9 @@ class DeepLTLModel(ActorCritic):
     @override
     def _compute_common_features(self, obs: PyTree) -> jax.Array:
         x = self.flatten_features(obs.features)
+        x = jax.vmap(self.env_net)(x)
         emb = jax.vmap(self.embedding)(obs.seq.reach[:, 0])  # current goal
-        x = jnp.concatenate([x, emb], axis=-1)
-        return x
+        return jnp.concatenate([x, emb], axis=-1)
 
     @staticmethod
     def flatten_features(features: NamedTuple) -> jax.Array:
