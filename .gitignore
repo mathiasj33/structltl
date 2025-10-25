@@ -1,4 +1,5 @@
 local/
+outputs/
 runs/
 *.zip
 data/

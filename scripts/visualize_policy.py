@@ -1,8 +1,9 @@
-import equinox as eqx
+import hydra
 import jax
+from omegaconf import DictConfig
 
 import jaxltl
-from jaxltl.deep_ltl.model import DeepLTLModel
+from jaxltl import eqx_utils
 from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
 from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
 from jaxltl.environments import environment
@@ -16,7 +17,8 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
 )
 
 
-def main():
+@hydra.main(version_base="1.1", config_path="../conf", config_name="test")
+def main(cfg: DictConfig):
     env, params = jaxltl.make("ZoneEnv")
     env = PrecomputedResetWrapper(
         env, params, jaxltl.DATA_DIR / "ZoneEnv/sampled_resets_test.eqx"
@@ -25,15 +27,14 @@ def main():
     env = SequenceWrapper(env, sampler)
     env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
 
-    model = DeepLTLModel(
-        env.observation_space(params).shape[0],
-        env.action_space(params).shape[0],
-        jax.nn.tanh,
-        embedding_dim=32,
-        num_propositions=4,
+    model = hydra.utils.instantiate(
+        cfg.model,
+        obs_dim=env.observation_space(params).shape[0],
+        action_dim=env.action_space(params).shape[0],
+        num_propositions=5,
         key=jax.random.key(0),
     )
-    model = eqx.tree_deserialise_leaves("runs/ZoneEnv/tmp2/model.eqx", model)
+    model = eqx_utils.load("runs/ZoneEnv/sequential_long/model.eqx", model)
 
     @jax.jit
     def random_policy(obs: environment.EnvObservation, key: jax.Array) -> jax.Array:
@@ -42,13 +43,13 @@ def main():
     @jax.jit
     def model_policy(obs: environment.EnvObservation, key: jax.Array) -> jax.Array:
         batch_obs = jax.tree.map(lambda x: x[None, ...], obs)
-        dist, _ = model(batch_obs)
-        action = dist.sample(seed=key).squeeze(0)
-        # action = dist.mean().squeeze(0)
+        dist = model.get_action(batch_obs)
+        # action = dist.sample(seed=key).squeeze(0)
+        action = dist.mean().squeeze(0)
         return action
 
     renderer: BaseRenderer = env.get_renderer(params)
-    renderer.run_render_loop(env, params, policy=model_policy)
+    renderer.run_render_loop(env, params, policy=model_policy, time_scale=2)
 
 
 if __name__ == "__main__":
