@@ -58,9 +58,9 @@ class AutoResetWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
-        state, obs = super().reset(key, params)
+        state, obs = super().reset(key, state, params)
         return self._wrap_reset_state(state, obs), obs
 
     @eqx.filter_jit
@@ -110,7 +110,7 @@ class AutoResetWrapper[
                     key_reset, self._env.unwrapped(state.initial_state), params
                 )
             case ResetStrategy.FULL:
-                state_re, obs_re = self.reset(key_reset, params)
+                state_re, obs_re = self.reset(key_reset, state.state, params)
 
         # Truncation
         truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore

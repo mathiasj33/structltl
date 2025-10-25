@@ -2,6 +2,7 @@ from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 
 from jaxltl.deep_ltl.samplers.sequence_sampler import (
     ReachAvoidSequence,
@@ -16,6 +17,7 @@ class SequenceState[TEnvState: eqx.Module](eqx.Module):
 
     state: TEnvState
     seq: ReachAvoidSequence
+    current: jax.Array
 
 
 class SequenceObservation[TObsFeatures: NamedTuple](EnvObservation[TObsFeatures]):
@@ -48,11 +50,23 @@ class SequenceWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: SequenceState[TEnvState] | None, params: TEnvParams
     ) -> tuple[SequenceState[TEnvState], SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
-        state, obs = super().reset(reset_key, params)
-        state = self._wrap_reset_state(state, sample_key)
+        re_state, obs = super().reset(reset_key, state.state if state else None, params)
+        if state:
+            current = (state.current + 1) % (self.sequence_sampler.num_propositions + 1)
+            current = jnp.where(current == 0, 1, current)
+            state = SequenceState(
+                state=re_state,
+                seq=ReachAvoidSequence(
+                    reach=jnp.array([current, 2, 2, 2, 2], dtype=jnp.int32),
+                    avoid=jnp.array([0, 0, 0, 0, 0], dtype=jnp.int32),
+                ),
+                current=current,
+            )
+        else:
+            state = self._wrap_reset_state(re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     @eqx.filter_jit
@@ -67,9 +81,11 @@ class SequenceWrapper[
     def _wrap_reset_state(
         self, state: TEnvState, key: jax.Array
     ) -> SequenceState[TEnvState]:
+        seq = self.sequence_sampler.sample(key)
         return SequenceState(
             state=state,
-            seq=self.sequence_sampler.sample(key),
+            seq=seq,
+            current=seq.reach[0],
         )
 
     @eqx.filter_jit
@@ -84,9 +100,10 @@ class SequenceWrapper[
         new_state = SequenceState(
             state=transition.state,
             seq=state.seq,
+            current=state.current,
         )
         current = state.seq.reach[0]
-        reached = transition.propositions[current - 1]  # propositions are 1-indexed
+        reached = transition.propositions[current - 1]
         reward = jax.lax.cond(reached, lambda: 1.0, lambda: 0.0)
         return EnvTransition(
             state=new_state,

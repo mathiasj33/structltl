@@ -24,13 +24,10 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
 from jaxltl.eqx_utils.training import ensemble_to_list
-from jaxltl.hydra_utils.utils import register_custom_resolvers
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
 
 logger = logging.getLogger(__name__)
-
-register_custom_resolvers()
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="train")
@@ -59,7 +56,7 @@ def main(cfg: DictConfig):
         cfg.model,
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
-        4,
+        5,
         model_keys,
     )
 
@@ -67,7 +64,12 @@ def main(cfg: DictConfig):
 
     def callback(metric, seed, step):
         seconds = time.time() - start_time
-        logger.info(f"Seed {seed}. Step {step}. SPS: {step / seconds:.2f}")
+        metric["total_step"] = metric["total_step"] * cfg.rl_alg.num_envs
+        last_return = metric["episode_return"][metric["done"]][-1]
+        last_step = metric["total_step"][metric["done"]][-1]
+        logger.info(
+            f"Seed {seed}. Step {step}. SPS: {step / seconds:.2f}. Return: {last_return}. Last Step: {last_step}"
+        )
 
     rl_alg: RLAlgorithm = hydra.utils.instantiate(cfg.rl_alg)
     train = eqx.filter_vmap(
@@ -90,7 +92,6 @@ def main(cfg: DictConfig):
             seed_metrics["total_step"][seed_metrics["done"]] * cfg.rl_alg.num_envs
         ).tolist()
         df = pd.DataFrame({"timestep": timesteps, "return": return_values})
-        df = df.groupby("timestep").mean().reset_index()
         df["seed"] = seed
         dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)

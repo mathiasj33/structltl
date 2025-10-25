@@ -37,6 +37,7 @@ class EnvParams(environment.EnvParams):
     keepout_radius: float
     # Lidar
     num_lidar_bins: int
+    exp_gain: float
     # Physics
     dt: float
     drag: float
@@ -74,6 +75,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         zones_per_color=2,
         keepout_radius=0.55,
         num_lidar_bins=16,
+        exp_gain=0.5,
         dt=0.05,
         drag=0.08,
         max_speed=3.0,
@@ -112,7 +114,9 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         )
 
     @override
-    def _reset(self, key_angle: jax.Array, params: EnvParams) -> EnvState:
+    def _reset(
+        self, key_angle: jax.Array, state: EnvState | None, params: EnvParams
+    ) -> EnvState:
         key_zones, key_pos, key_angle = jax.random.split(key_angle, 3)
         centers, colors = self._sample_zones(key_zones, params)
         agent_pos = self._sample_agent_position(key_pos, params, centers)
@@ -292,7 +296,6 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
         Returns an array of shape (C, num_bins) with distances in world units.
         """
-        max_range = params.world_size
         pos = state.position  # (2,)
         bin_size = 2.0 * jnp.pi / params.num_lidar_bins
         heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])  # (2,)
@@ -307,7 +310,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
             direction = zone_pos - pos  # (2,)
             dist: float = jnp.linalg.norm(direction)  # ()
-            sensor = jnp.clip(1.0 - dist / max_range, 0.0, 1.0)  # ()
+            sensor = jnp.exp(-params.exp_gain * dist)
             direction = direction / (dist + _EPS)  # (2,)
             dotp = jnp.dot(heading, direction)
             cross = jnp.cross(heading, direction)

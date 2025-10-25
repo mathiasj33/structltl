@@ -31,9 +31,9 @@ class LogWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
-        state, obs = super().reset(key, params)
+        state, obs = super().reset(key, state, params)
         return self._wrap_reset_state(state), obs
 
     @eqx.filter_jit

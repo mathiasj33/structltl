@@ -64,14 +64,19 @@ class Environment[
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        """Performs resetting of environment."""
-        state = self._reset(key, params)
+        """Performs resetting of environment.
+
+        Dependence on state is needed for some wrappers (e.g. CurriculumWrapper).
+        """
+        state = self._reset(key, state, params)
         return state, self.compute_obs(state, params)
 
     @abstractmethod
-    def _reset(self, key: jax.Array, params: TEnvParams) -> TEnvState:
+    def _reset(
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+    ) -> TEnvState:
         """Environment-specific reset."""
         pass
 

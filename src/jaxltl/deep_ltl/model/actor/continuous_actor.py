@@ -73,7 +73,8 @@ class ContinuousActor(eqx.Module):
         encoded = jax.vmap(self.encoder)(x)
         mean = jax.vmap(self.action_mean)(encoded)
         if self.action_std is not None:
-            std = jax.nn.softplus(jax.vmap(self.action_std)(encoded))
+            std = jax.vmap(self.action_std)(encoded)
+            std = jax.nn.softplus(std)
         else:
             std = jnp.exp(self.log_std)[None, :].reshape(mean.shape)  # type: ignore
         std += 1e-6  # numerical stability

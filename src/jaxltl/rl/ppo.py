@@ -35,6 +35,7 @@ class PPOConfig(NamedTuple):
     lr: float
     max_grad_norm: float
     anneal_lr: bool
+    adam_eps: float
 
 
 class PPO(RLAlgorithm):
@@ -73,7 +74,7 @@ class PPO(RLAlgorithm):
                 learning_rate=self.linear_schedule
                 if self.config.anneal_lr
                 else self.config.lr,
-                eps=1e-5,
+                eps=self.config.adam_eps,
             ),
         )
         train_state = TrainState.create(model, optim)
@@ -81,7 +82,7 @@ class PPO(RLAlgorithm):
         # Initialize environment
         key, reset_key = jax.random.split(key)
         reset_keys = jax.random.split(reset_key, self.config.num_envs)
-        env_state, obsv = env.reset(reset_keys, env_params)
+        env_state, obsv = env.reset(reset_keys, None, env_params)
 
         # Calculate number of updates and callback intervals
         num_steps_per_update = self.config.num_envs * self.config.num_steps

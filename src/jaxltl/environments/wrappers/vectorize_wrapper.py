@@ -22,13 +22,13 @@ class VectorizeWrapper[
     ):
         super().__init__(env)
 
-    @partial(jax.vmap, in_axes=(None, 0, None))
+    @partial(jax.vmap, in_axes=(None, 0, None, None))
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        return super().reset(key, params)
+        return super().reset(key, state, params)
 
-    @partial(jax.vmap, in_axes=(None, 0, None))
+    @partial(jax.vmap, in_axes=(None, 0, None, None))
     def cheap_reset(
         self, key: jax.Array, state: TEnvState, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:

@@ -8,7 +8,7 @@ defaults:
 model:
   _target_: jaxltl.deep_ltl.model.model.DeepLTLModel
   _recursive_: false
-  embedding_dim: 16
+  embedding_dim: 32
   env_net:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [128]
@@ -39,11 +39,12 @@ rl_alg:
   num_steps: 4096
   num_minibatches: 32
   update_epochs: 10
-  gamma: 0.99
+  gamma: 0.998
   gae_lambda: 0.95
   clip_eps: 0.2
   ent_coef: 0.003
   vf_coef: 0.5
-  lr: 2.5e-4
+  lr: 3e-4
   max_grad_norm: 0.5
-  anneal_lr: true
+  anneal_lr: false
+  adam_eps: 1e-8

@@ -31,7 +31,7 @@ class PrecomputedResetWrapper[
     ):
         super().__init__(env)
         self.num_reset_states = eqx_utils.load_metadata(path)["batch_dim"]
-        state_template, _ = env.reset(jax.random.key(0), params=params)
+        state_template, _ = env.reset(jax.random.key(0), None, params=params)
         state_template = jax.tree.map(  # Add batch dimension
             lambda x: jnp.zeros((self.num_reset_states,) + x.shape, dtype=x.dtype),
             state_template,
@@ -40,7 +40,7 @@ class PrecomputedResetWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         state = self._sample_random_reset_state(key)
         obs = self._env.compute_obs(state, params)
@@ -56,4 +56,4 @@ class PrecomputedResetWrapper[
     def cheap_reset(
         self, key: jax.Array, state: TEnvState, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        return self.reset(key, params)
+        return self.reset(key, state, params)

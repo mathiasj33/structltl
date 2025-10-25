@@ -31,9 +31,9 @@ class EnvWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        return self._env.reset(key, params)
+        return self._env.reset(key, state, params)
 
     @eqx.filter_jit
     def cheap_reset(

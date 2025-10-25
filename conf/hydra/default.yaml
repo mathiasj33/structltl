@@ -1,5 +1,5 @@
 run:
-  dir: runs/${env}/${run}
+  dir: runs/${env.name}/${run}
 
 job:
   chdir: true # Change the working directory to the output directory

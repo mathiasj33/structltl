@@ -87,7 +87,7 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
         if key is None:
             key = jax.random.key(0)
         key, key_reset = jax.random.split(key)
-        state, obs = env.reset(key_reset, params)
+        state, obs = env.reset(key_reset, None, params)
         action = policy(obs, key) if policy else env.action_space(params).sample(key)  # type: ignore
         # Warm-up step, make sure everything is jitted
         env.step(key, state, action, params)  # type: ignore
