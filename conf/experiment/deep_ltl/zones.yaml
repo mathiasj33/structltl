@@ -5,6 +5,9 @@ defaults:
   - /alg: deep_ltl
   - /rl_alg: ppo
 
+curriculum:
+  _target_: jaxltl.deep_ltl.curriculum.zone_env_curriculum.make
+
 model:
   _target_: jaxltl.deep_ltl.model.model.DeepLTLModel
   _recursive_: false

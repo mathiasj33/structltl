@@ -362,6 +362,21 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
         return propositions
 
+    @property
+    @override
+    def assignments(self) -> jax.Array:
+        """Returns the possible assignments in the environment.
+
+        Returns: array of shape (num_assignments, num_propositions) boolean
+        """
+        num_props = len(self.propositions)
+        # Each assignment corresponds to being inside a single color zone
+        assignments = jnp.eye(num_props, dtype=bool)  # (num_props, num_props)
+        # Add the assignment for being outside all zones
+        outside_assignment = jnp.zeros((1, num_props), dtype=bool)
+        assignments = jnp.vstack([assignments, outside_assignment])
+        return assignments
+
     def get_renderer(
         self, env_params: EnvParams, **kwargs
     ) -> "BaseRenderer[EnvState, ObsFeatures]":

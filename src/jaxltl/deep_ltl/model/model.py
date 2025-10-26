@@ -8,6 +8,7 @@ from equinox import nn
 from jaxtyping import PyTree
 from omegaconf import DictConfig
 
+from jaxltl.deep_ltl.curriculum.sequence_sampler import ReachAvoidSequence
 from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
 from jaxltl.networks.mlp import MLP
 from jaxltl.rl.actor_critic import ActorCritic
@@ -23,7 +24,7 @@ class DeepLTLModel(ActorCritic):
         self,
         obs_dim: int,
         action_dim: int,
-        num_propositions: int,
+        num_assignments: int,
         key: jax.Array,
         **kwargs,
     ):
@@ -34,7 +35,7 @@ class DeepLTLModel(ActorCritic):
         )
         embedding_dim = config.embedding_dim
         self.embedding = nn.Embedding(
-            num_embeddings=num_propositions,
+            num_embeddings=num_assignments,
             embedding_size=embedding_dim,
             key=embedding_key,
         )
@@ -63,8 +64,13 @@ class DeepLTLModel(ActorCritic):
     def _compute_common_features(self, obs: PyTree) -> jax.Array:
         x = self.flatten_features(obs.features)
         x = jax.vmap(self.env_net)(x)
-        emb = jax.vmap(self.embedding)(obs.seq.reach[:, 0])  # current goal
+        emb = jax.vmap(self._compute_sequence_embedding)(obs.seq)
         return jnp.concatenate([x, emb], axis=-1)
+
+    def _compute_sequence_embedding(self, seq: ReachAvoidSequence) -> jax.Array:
+        first_goal = seq.reach[0]  # (num_assignments + 1,)
+        index = jnp.argmax(first_goal[:-1])  # exclude padding
+        return self.embedding(index)
 
     @staticmethod
     def flatten_features(features: NamedTuple) -> jax.Array:

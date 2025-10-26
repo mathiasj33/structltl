@@ -175,6 +175,15 @@ class Environment[
         pass
 
     @property
+    @abstractmethod
+    def assignments(self) -> jax.Array:
+        """Returns the possible assignments in the environment.
+
+        Returns: array of shape (num_assignments, num_propositions) boolean
+        """
+        pass
+
+    @property
     def name(self) -> str:
         """Environment name."""
         return type(self).__name__

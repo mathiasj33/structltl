@@ -174,6 +174,9 @@ class PPO(RLAlgorithm):
             env_params,
             key=rollout_key,
         )
+
+        # TODO: callable for rollout data in order to update curriculum stage
+
         advantages, targets = self._calculate_gae(trajs, last_obs, train_state.model)
 
         # Update update_epochs number of times over the collected data

@@ -16,8 +16,8 @@ from omegaconf import DictConfig
 
 import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
-from jaxltl.deep_ltl.samplers.sequence_sampler import ReachSampler
-from jaxltl.deep_ltl.wrappers.sequence_wrapper import SequenceWrapper
+from jaxltl.deep_ltl.curriculum.curriculum import Curriculum
+from jaxltl.deep_ltl.wrappers.curriculum_wrapper import CurriculumWrapper
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
 from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
 from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
@@ -30,6 +30,12 @@ from jaxltl.rl.algorithm import RLAlgorithm
 logger = logging.getLogger(__name__)
 
 
+# TODO
+# 1. Finish model implementation with reach-avoid sequences
+# 2. Test with same curriculum stage throughout training
+# 3. Implement updating curriculum stage based on performance
+
+
 @hydra.main(version_base="1.1", config_path="../conf", config_name="train")
 def main(cfg: DictConfig):
     if not cfg.use_gpu:
@@ -40,8 +46,8 @@ def main(cfg: DictConfig):
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
-    sampler = ReachSampler(num_propositions=4, max_length=5)
-    env = SequenceWrapper(env, sampler)
+    curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
+    env = CurriculumWrapper(env, curriculum)
     env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
     env = LogWrapper(env)
     env = VectorizeWrapper(env)
@@ -56,7 +62,7 @@ def main(cfg: DictConfig):
         cfg.model,
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
-        5,
+        env.assignments.shape[0],
         model_keys,
     )
 
@@ -106,14 +112,14 @@ def build_model(
     model_cfg: DictConfig,
     obs_dim: int,
     action_dim: int,
-    num_propositions: int,
+    num_assignments: int,
     key: jax.Array,
 ) -> ActorCritic:
     model: ActorCritic = hydra.utils.instantiate(
         model_cfg,
         obs_dim=obs_dim,
         action_dim=action_dim,
-        num_propositions=num_propositions,
+        num_assignments=num_assignments,
         key=key,
     )
     return model

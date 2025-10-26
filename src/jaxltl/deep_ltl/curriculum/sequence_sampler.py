@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 import equinox as eqx
 import jax
+import jax.numpy as jnp
 
 
 class ReachAvoidSequence(NamedTuple):
@@ -13,6 +14,14 @@ class ReachAvoidSequence(NamedTuple):
     # TODO: +1 for epsilon
     reach: jax.Array  # shape: (max_length, num_assignments + 1)  # + 1 for padding
     avoid: jax.Array  # shape: (max_length, num_assignments + 1)
+
+    def advance(self) -> "ReachAvoidSequence":
+        """Advance the reach-avoid sequence by one step. Returns a new sequence, with
+        the last step padded.
+        """
+        seq = jax.tree.map(lambda x: jnp.roll(x, -1, axis=0), self)
+        seq = jax.tree.map(lambda x: x.at[-1, :].set(False).at[-1, -1].set(True), seq)
+        return seq
 
 
 class SequenceSampler(eqx.Module):
