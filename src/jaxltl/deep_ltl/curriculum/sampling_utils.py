@@ -1,0 +1,31 @@
+"""Utility functions for JAX-friendly sequence sampling."""
+
+import jax
+import jax.numpy as jnp
+
+
+@jax.jit
+def sample_assignments(
+    available_mask: jax.Array, reach_range: tuple[int, int], key: jax.Array
+) -> jax.Array:
+    """
+    Samples between (min_reach, max_reach) assignments from the available ones.
+
+    Args:
+        available_mask: A boolean array of shape (num_assignments,) indicating which
+            assignments are available for sampling.
+        reach_range: A tuple (min_reach, max_reach) specifying the range for
+            the number of assignments to sample.
+        key: A JAX random key.
+    """
+    nr_key, reach_key = jax.random.split(key)
+    nr = jax.random.randint(nr_key, (), reach_range[0], reach_range[1] + 1)
+    num_assignments = available_mask.shape[0]
+
+    shuffled_indices = jax.random.permutation(reach_key, num_assignments)
+    is_available = available_mask[shuffled_indices]
+    cumulative_available = jnp.cumsum(is_available)
+    is_in_sample_sorted = (cumulative_available <= nr) & is_available
+    original_indices_order = jnp.argsort(shuffled_indices)
+    mask = is_in_sample_sorted[original_indices_order]
+    return mask
