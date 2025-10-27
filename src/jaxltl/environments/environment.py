@@ -41,7 +41,8 @@ class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple)
     terminated: jax.Array  # shape: () boolean
     truncated: jax.Array  # shape: () boolean
     terminal_observation: EnvObservation[TObsFeatures]  # used if done
-    propositions: jax.Array  # shape: (num_propositions,) boolean
+    # shape: (num_propositions,) int32: index in propositions / -1 for padding
+    propositions: jax.Array
     info: dict[Any, Any]
 
     @property
@@ -151,7 +152,8 @@ class Environment[
     def compute_propositions(self, state: TEnvState, params: TEnvParams) -> jax.Array:
         """Computes atomic propositions from environment state.
 
-        Returns: boolean array of shape (num_propositions,)"""
+        Returns: int32 array of shape (num_propositions,) where each entry is the index
+        in self.propositions (or -1 for padding)."""
         pass
 
     def observation_space(self, params: TEnvParams | None = None) -> Space:
@@ -174,12 +176,24 @@ class Environment[
     def _action_space(self, params: TEnvParams) -> Space:
         pass
 
+    def map_assignment_to_index(self, assignment: jax.Array) -> jax.Array:
+        """Maps a proposition assignment to an index in the assignments array.
+
+        Args:
+            assignment: jax.Array of shape (num_propositions,) int32
+
+        Returns:
+            jax.Array of shape () int32: index in assignments array
+        """
+        matches = jnp.all(self.assignments == assignment, axis=1)  # (num_assignments,)
+        return jnp.argmax(matches)  # () int32
+
     @property
     @abstractmethod
     def assignments(self) -> jax.Array:
         """Returns the possible assignments in the environment.
 
-        Returns: array of shape (num_assignments, num_propositions) boolean
+        Returns: array of shape (num_assignments, num_propositions) int32
         """
         pass
 

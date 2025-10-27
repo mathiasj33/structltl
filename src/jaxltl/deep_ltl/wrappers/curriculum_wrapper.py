@@ -10,7 +10,6 @@ from jaxltl.deep_ltl.curriculum.curriculum import (
 )
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 from jaxltl.environments.wrappers import EnvWrapper
-from jaxltl.utils.utils import map_assignment_to_index
 
 
 class CurriculumState[TEnvState: eqx.Module](eqx.Module):
@@ -90,17 +89,15 @@ class CurriculumWrapper[
         params: TEnvParams,
     ) -> EnvTransition[CurriculumState[TEnvState], TObsFeatures]:
         transition = super().step(key, state.state, action, params)
-        reach = state.seq.reach[0]  # (num_assignments + 1,)
+        reach = state.seq.reach[0]  # (num_assignments,)
         avoid = state.seq.avoid[0]
-        assignment = map_assignment_to_index(
-            transition.propositions, self._env.assignments
-        )
-        avoided = ~avoid[assignment]
-        reached = jnp.logical_and(reach[assignment], avoided)
+        assignment = self._env.map_assignment_to_index(transition.propositions)
+        avoided = jnp.logical_not(jnp.any(avoid == assignment))
+        reached = jnp.logical_and(jnp.any(reach == assignment), avoided)
         seq: ReachAvoidSequence = jax.lax.cond(
             reached, lambda: state.seq.advance(), lambda: state.seq
         )
-        reached_end = seq.reach[0, -1]  # Check if reached the padding step
+        reached_end = jnp.all(seq.reach[0] == -1)  # Check if reached is just padding
         reward = jax.lax.cond(
             reached_end,
             lambda: 1.0,

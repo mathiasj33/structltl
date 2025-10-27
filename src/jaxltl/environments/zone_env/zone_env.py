@@ -343,8 +343,8 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
     def compute_propositions(self, state: EnvState, params: EnvParams) -> jax.Array:
         """Compute which zones the agent is currently inside.
 
-        Returns a boolean array of shape (C,) indicating for each color whether
-        the agent is inside any zone of that color.
+        Returns an int32 array of shape (C,) containing the color ids of the zones
+        the agent is inside, with -1 as padding.
         """
         pos = state.position  # (2,)
         centers = state.zone_centers  # (N,2)
@@ -356,26 +356,27 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         def compute_color_prop(color_id: jax.Array) -> jax.Array:
             mask_color = colors == color_id  # (N,)
             inside_color = jnp.logical_and(mask_color, inside)  # (N,)
-            return jnp.any(inside_color)
+            return jax.lax.cond(jnp.any(inside_color), lambda: color_id, lambda: -1)
 
         color_ids = jnp.arange(len(self.propositions), dtype=jnp.int32)
         propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
-        return propositions
+        return jnp.sort(propositions, descending=True)
 
     @property
     @override
     def assignments(self) -> jax.Array:
         """Returns the possible assignments in the environment.
 
-        Returns: array of shape (num_assignments, num_propositions) boolean
+        Returns: array of shape (num_assignments, C) int32
         """
-        num_props = len(self.propositions)
-        # Each assignment corresponds to being inside a single color zone
-        assignments = jnp.eye(num_props, dtype=bool)  # (num_props, num_props)
-        # Add the assignment for being outside all zones
-        outside_assignment = jnp.zeros((1, num_props), dtype=bool)
-        assignments = jnp.vstack([assignments, outside_assignment])
-        return assignments
+        color_assignments = jnp.arange(len(self.propositions)).reshape(-1, 1)
+        empty_assignment = jnp.array([[-1]], dtype=jnp.int32)
+        assignments = jnp.vstack([color_assignments, empty_assignment])
+        padding = -jnp.ones(
+            (assignments.shape[0], len(self.propositions) - 1),
+            dtype=jnp.int32,
+        )
+        return jnp.hstack([assignments, padding])
 
     def get_renderer(
         self, env_params: EnvParams, **kwargs

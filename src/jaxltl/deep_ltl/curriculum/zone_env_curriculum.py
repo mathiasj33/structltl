@@ -6,7 +6,10 @@ from jaxltl.deep_ltl.curriculum.curriculum import (
 )
 from jaxltl.deep_ltl.curriculum.zone_env_samplers import ZoneReachAvoidSampler
 
-_num_assignments = 4
+# TODO: fix the below
+_num_assignments = (
+    4  # NOTE: we assume that the empty assignment is the last one (with index 5)
+)
 _max_length = 3
 
 make = lambda: PrecomputedCurriculum(

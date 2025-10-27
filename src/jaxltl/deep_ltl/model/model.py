@@ -35,7 +35,7 @@ class DeepLTLModel(ActorCritic):
         )
         embedding_dim = config.embedding_dim
         self.embedding = nn.Embedding(
-            num_embeddings=num_assignments,
+            num_embeddings=num_assignments + 1,
             embedding_size=embedding_dim,
             key=embedding_key,
         )
@@ -68,9 +68,8 @@ class DeepLTLModel(ActorCritic):
         return jnp.concatenate([x, emb], axis=-1)
 
     def _compute_sequence_embedding(self, seq: ReachAvoidSequence) -> jax.Array:
-        first_goal = seq.reach[0]  # (num_assignments + 1,)
-        index = jnp.argmax(first_goal[:-1])  # exclude padding
-        return self.embedding(index)
+        first_goal = seq.reach[0, 0]  # (num_assignments,)
+        return self.embedding(first_goal + 1)
 
     @staticmethod
     def flatten_features(features: NamedTuple) -> jax.Array:

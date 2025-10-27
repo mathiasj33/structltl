@@ -42,10 +42,8 @@ class ZoneReachAvoidSampler(SequenceSampler):
         depth = jax.random.randint(depth_key, (), self.depth[0], self.depth[1] + 1)
 
         # 1. Pre-allocate output arrays (filled with padding)
-
-        # We use num_assignments here and add the final padding col at the end
-        reach_seq = jnp.zeros((self.max_length, self.num_assignments), dtype=bool)
-        avoid_seq = jnp.zeros((self.max_length, self.num_assignments), dtype=bool)
+        reach_seq = -jnp.ones((self.max_length, self.num_assignments), dtype=jnp.int32)
+        avoid_seq = -jnp.ones((self.max_length, self.num_assignments), dtype=jnp.int32)
 
         def body_fn(i, carry):
             """
@@ -74,8 +72,12 @@ class ZoneReachAvoidSampler(SequenceSampler):
             )
 
             # --- 3. Update the output arrays at index `i` ---
-            reach_seq_new = reach_seq_carry.at[i].set(reach_mask)
-            avoid_seq_new = avoid_seq_carry.at[i].set(avoid_mask)
+            reach = jnp.nonzero(reach_mask, size=self.num_assignments, fill_value=-1)[0]
+            reach = jnp.sort(reach, descending=True)
+            avoid = jnp.nonzero(avoid_mask, size=self.num_assignments, fill_value=-1)[0]
+            avoid = jnp.sort(avoid, descending=True)
+            reach_seq_new = reach_seq_carry.at[i].set(reach)
+            avoid_seq_new = avoid_seq_carry.at[i].set(avoid)
 
             new_carry = (key, new_last_reach_props_mask, reach_seq_new, avoid_seq_new)
             return new_carry
@@ -94,10 +96,4 @@ class ZoneReachAvoidSampler(SequenceSampler):
         # 4. Extract the final arrays from the carry
         _, _, final_reach_seq, final_avoid_seq = final_carry
 
-        # 5. Add the padding column for the '+1' in the output shape
-        indices = jnp.arange(self.max_length)
-        padding_col = (indices >= depth).reshape(-1, 1)
-        reach_padded = jnp.concatenate([final_reach_seq, padding_col], axis=1)
-        avoid_padded = jnp.concatenate([final_avoid_seq, padding_col], axis=1)
-
-        return ReachAvoidSequence(reach=reach_padded, avoid=avoid_padded)
+        return ReachAvoidSequence(reach=final_reach_seq, avoid=final_avoid_seq)

@@ -18,29 +18,30 @@ def test_reach_avoid_sampler():
         seq = sampler.sample(subkey)
 
         # Check shapes
-        assert seq.reach.shape == (sampler.max_length, sampler.num_assignments + 1)
-        assert seq.avoid.shape == (sampler.max_length, sampler.num_assignments + 1)
+        assert seq.reach.shape == (sampler.max_length, sampler.num_assignments)
+        assert seq.avoid.shape == (sampler.max_length, sampler.num_assignments)
 
         # Check depth constraints
-        padding_col = seq.reach[:, -1]
-        depth = int(jnp.sum(~padding_col))
-        assert sampler.depth[0] <= depth <= sampler.depth[1]
+        assert sampler.depth[0] <= seq.depth <= sampler.depth[1]
 
-        for i in range(depth):
+        for i in range(seq.depth):
             # Check reach set size constraints
-            reach_set = seq.reach[i, :-1]
-            num_reach = int(jnp.sum(reach_set))
+            reach_set = seq.reach[i]
+            num_reach = jnp.sum(reach_set != -1)
             assert sampler.reach[0] <= num_reach <= sampler.reach[1]
 
             # Check avoid set size constraints
-            avoid_set = seq.avoid[i, :-1]
-            num_avoid = int(jnp.sum(avoid_set))
+            avoid_set = seq.avoid[i]
+            num_avoid = jnp.sum(avoid_set != -1)
             assert sampler.avoid[0] <= num_avoid <= sampler.avoid[1]
 
             # Check reach-avoid disjointness
-            assert jnp.all((reach_set & seq.avoid[i, :-1]) == 0)
+            assert len(set(reach_set.tolist()) & set(avoid_set.tolist()) - {-1}) == 0
 
             # Check reach-last reach disjointness
             if i > 0:
-                last_reach_set = seq.reach[i - 1, :-1]
-                assert jnp.all((reach_set & last_reach_set) == 0)
+                last_reach_set = seq.reach[i - 1]
+                assert (
+                    len(set(reach_set.tolist()) & set(last_reach_set.tolist()) - {-1})
+                    == 0
+                )
