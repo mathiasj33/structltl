@@ -11,7 +11,6 @@ curriculum:
 model:
   _target_: jaxltl.deep_ltl.model.model.DeepLTLModel
   _recursive_: false
-  embedding_dim: 32
   env_net:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [128]
@@ -27,14 +26,11 @@ model:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [64, 64]
     activation: ${act:tanh}
-  ltl:
+  sequence:
+    embedding_dim: 32
     deep_sets:
       hidden_sizes: [32]
-      out_size: 16
       activation: ${act:relu}
-    gru:
-      embedding_dim: 16
-      num_layers: 1
 
 rl_alg:
   total_timesteps: 5e6
