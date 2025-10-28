@@ -31,6 +31,7 @@ model:
     deep_sets:
       hidden_sizes: [32]
       activation: ${act:relu}
+  embedding_dim: 32
 
 rl_alg:
   total_timesteps: 5e6
