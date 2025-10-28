@@ -19,28 +19,39 @@ class LogWrapper[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+    TResetOptions: NamedTuple,
+](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
     """Log the episode returns and lengths to the info dict."""
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: (
+            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+        ),
     ):
         super().__init__(env)
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
-        state, obs = super().reset(key, state, params)
+        state, obs = super().reset(key, state, params, options)
         return self._wrap_reset_state(state), obs
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
-        state, obs = super().cheap_reset(key, state, params)
+        state, obs = super().cheap_reset(key, state, params, options)
         return self._wrap_reset_state(state), obs
 
     def _wrap_reset_state(self, state: TEnvState) -> LogEnvState[TEnvState]:

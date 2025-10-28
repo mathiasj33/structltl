@@ -26,7 +26,8 @@ class AutoResetWrapper[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+    TResetOptions: NamedTuple,
+](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
     """Automatically reset the environment on termination or truncation.
 
     Due to JIT compilation requirements, we have to compute a new reset state at every
@@ -46,28 +47,45 @@ class AutoResetWrapper[
     """
 
     reset_strategy: ResetStrategy
+    auto_reset_options: TResetOptions | None
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: (
+            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+        ),
         reset_strategy: ResetStrategy,
+        auto_reset_options: TResetOptions | None = None,
     ):
         super().__init__(env)
         self.reset_strategy = reset_strategy
+        self.auto_reset_options = auto_reset_options
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
-        state, obs = super().reset(key, state, params)
+        if options is None:
+            options = self.auto_reset_options
+        state, obs = super().reset(key, state, params, options)
         return self._wrap_reset_state(state, obs), obs
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
-        state, obs = super().cheap_reset(key, state, params)
+        if options is None:
+            options = self.auto_reset_options
+        state, obs = super().cheap_reset(key, state, params, options)
         return self._wrap_reset_state(state, obs), obs
 
     def _wrap_reset_state(
@@ -107,10 +125,15 @@ class AutoResetWrapper[
                 )
             case ResetStrategy.CHEAP:
                 state_re, obs_re = self.cheap_reset(
-                    key_reset, self._env.unwrapped(state.initial_state), params
+                    key_reset,
+                    self._env.unwrapped(state.initial_state),
+                    params,
+                    self.auto_reset_options,
                 )
             case ResetStrategy.FULL:
-                state_re, obs_re = self.reset(key_reset, state.state, params)
+                state_re, obs_re = self.reset(
+                    key_reset, state.state, params, self.auto_reset_options
+                )
 
         # Truncation
         truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore

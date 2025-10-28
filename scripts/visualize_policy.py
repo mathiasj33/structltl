@@ -49,8 +49,17 @@ def main(cfg: DictConfig):
         action = dist.mean().squeeze(0)
         return action
 
+    if cfg.policy == "model":
+        policy = model_policy
+    elif cfg.policy == "random":
+        policy = random_policy
+    elif cfg.policy == "teleop":
+        policy = None
+    else:
+        raise ValueError(f"Unknown policy type: {cfg.policy}")
+
     renderer: BaseRenderer = env.get_renderer(params)
-    renderer.run_render_loop(env, params, policy=None, time_scale=2)
+    renderer.run_render_loop(env, params, policy=policy, time_scale=2)
 
 
 def build_model(

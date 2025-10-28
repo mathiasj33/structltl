@@ -4,10 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from jaxltl.deep_ltl.curriculum.curriculum import (
-    Curriculum,
-    ReachAvoidSequence,
-)
+from jaxltl.deep_ltl.curriculum.curriculum import Curriculum, ReachAvoidSequence
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 from jaxltl.environments.wrappers import EnvWrapper
 
@@ -34,15 +31,18 @@ class CurriculumWrapper[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+    TResetOptions: NamedTuple,
+](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
     """A wrapper that adds reach-avoid sequences sampled from a curriculum to the environment."""
 
     curriculum: Curriculum
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: (
+            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+        ),
         curriculum: Curriculum,
     ):
         super().__init__(env)
@@ -54,19 +54,26 @@ class CurriculumWrapper[
         key: jax.Array,
         state: CurriculumState[TEnvState] | None,
         params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[CurriculumState[TEnvState], SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
-        re_state, obs = super().reset(reset_key, state.state if state else None, params)
+        re_state, obs = super().reset(
+            reset_key, state.state if state else None, params, options
+        )
         stage = state.curriculum_stage if state else jnp.zeros((), dtype=jnp.int32)
         state = self._wrap_reset_state(stage, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: CurriculumState[TEnvState], params: TEnvParams
+        self,
+        key: jax.Array,
+        state: CurriculumState[TEnvState],
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[CurriculumState[TEnvState], SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
-        re_state, obs = super().cheap_reset(reset_key, state.state, params)
+        re_state, obs = super().cheap_reset(reset_key, state.state, params, options)
         state = self._wrap_reset_state(state.curriculum_stage, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 

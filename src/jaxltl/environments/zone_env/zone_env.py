@@ -65,7 +65,11 @@ class ObsFeatures(NamedTuple):
     lidar: jax.Array  # shape: (C, num_bins)
 
 
-class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
+class ResetOptions(NamedTuple):
+    pass
+
+
+class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOptions]):
     default_params = EnvParams(
         max_steps_in_episode=1000,
         agent_radius=0.1,
@@ -115,7 +119,11 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
     @override
     def _reset(
-        self, key_angle: jax.Array, state: EnvState | None, params: EnvParams
+        self,
+        key_angle: jax.Array,
+        state: EnvState | None,
+        params: EnvParams,
+        options: ResetOptions | None = None,
     ) -> EnvState:
         key_zones, key_pos, key_angle = jax.random.split(key_angle, 3)
         centers, colors = self._sample_zones(key_zones, params)
@@ -138,7 +146,11 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
     @override
     def _cheap_reset(
-        self, key: jax.Array, state: EnvState, params: EnvParams
+        self,
+        key: jax.Array,
+        state: EnvState,
+        params: EnvParams,
+        options: ResetOptions | None = None,
     ) -> EnvState:
         raise NotImplementedError("Cheap reset is not implemented for ZoneEnv.")
 

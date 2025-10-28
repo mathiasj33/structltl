@@ -18,14 +18,17 @@ class PrecomputedResetWrapper[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+    TResetOptions: NamedTuple,
+](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
     reset_states: TEnvState  # batched reset states
     num_reset_states: int
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: (
+            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+        ),
         params: TEnvParams,
         path: str | Path,
     ):
@@ -40,7 +43,13 @@ class PrecomputedResetWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: (
+            TResetOptions | None
+        ) = None,  # note: currently ignored for precomputed resets
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         state = self._sample_random_reset_state(key)
         obs = self._env.compute_obs(state, params)
@@ -54,6 +63,10 @@ class PrecomputedResetWrapper[
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        return self.reset(key, state, params)
+        return self.reset(key, state, params, options)

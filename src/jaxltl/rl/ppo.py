@@ -1,6 +1,7 @@
 """Proximal Policy Optimization (PPO) algorithm implementation.
 
-Adapted from PureJaxRL's PPO implementation (https://github.com/luchris429/purejaxrl/blob/main/purejaxrl/ppo_continuous_action.py)."""
+Adapted from PureJaxRL's PPO implementation (https://github.com/luchris429/purejaxrl/blob/main/purejaxrl/ppo_continuous_action.py).
+"""
 
 import math
 from collections.abc import Callable
@@ -71,9 +72,9 @@ class PPO(RLAlgorithm):
         optim = optax.chain(
             optax.clip_by_global_norm(self.config.max_grad_norm),
             optax.adam(
-                learning_rate=self.linear_schedule
-                if self.config.anneal_lr
-                else self.config.lr,
+                learning_rate=(
+                    self.linear_schedule if self.config.anneal_lr else self.config.lr
+                ),
                 eps=self.config.adam_eps,
             ),
         )
@@ -82,7 +83,7 @@ class PPO(RLAlgorithm):
         # Initialize environment
         key, reset_key = jax.random.split(key)
         reset_keys = jax.random.split(reset_key, self.config.num_envs)
-        env_state, obsv = env.reset(reset_keys, None, env_params)
+        env_state, obsv = env.reset(reset_keys, None, env_params, None)
 
         # Calculate number of updates and callback intervals
         num_steps_per_update = self.config.num_envs * self.config.num_steps
@@ -305,7 +306,8 @@ class PPO(RLAlgorithm):
         """Prepare shuffled minibatches from the collected trajectories.
 
         Returns:
-            minibatches: PyTree with shape (num_minibatches, batch_size_per_minibatch, ...)."""
+            minibatches: PyTree with shape (num_minibatches, batch_size_per_minibatch, ...).
+        """
 
         num_transitions = self.config.num_steps * self.config.num_envs
         key, perm_key = jax.random.split(key)

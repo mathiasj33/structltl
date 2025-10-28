@@ -1,6 +1,7 @@
 """Abstract base class for all jaxltl environments.
 
-Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/environments/environment.py)."""
+Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/environments/environment.py).
+"""
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -55,6 +56,7 @@ class Environment[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
+    TResetOptions: NamedTuple,
 ](eqx.Module):
     """Abstract base class for environments."""
 
@@ -65,18 +67,26 @@ class Environment[
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
     def reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         """Performs resetting of environment.
 
         Dependence on state is needed for some wrappers (e.g. CurriculumWrapper).
         """
-        state = self._reset(key, state, params)
+        state = self._reset(key, state, params, options)
         return state, self.compute_obs(state, params)
 
     @abstractmethod
     def _reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> TEnvState:
         """Environment-specific reset."""
         pass
@@ -84,18 +94,27 @@ class Environment[
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
     def cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         """Performs a cheap reset of the environment given the current state.
         Since JIT requires resetting on every step, this method can be used to implement
-        a faster reset to improve performance. See AutoResetWrapper for further details."""
+        a faster reset to improve performance. See AutoResetWrapper for further details.
+        """
 
-        state = self._cheap_reset(key, state, params)
+        state = self._cheap_reset(key, state, params, options)
         return state, self.compute_obs(state, params)
 
     @abstractmethod
     def _cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> TEnvState:
         """Environment-specific cheap reset."""
         pass

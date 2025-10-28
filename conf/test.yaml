@@ -2,3 +2,5 @@ defaults:
   - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
+
+policy: "teleop" # "teleop", "random" or "model"
