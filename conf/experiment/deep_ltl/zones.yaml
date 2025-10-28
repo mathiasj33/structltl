@@ -27,9 +27,11 @@ model:
     hidden_sizes: [64, 64]
     activation: ${act:tanh}
   sequence:
-    embedding_dim: 32
+    embedding_dim: 16
     deep_sets:
+      _target_: jaxltl.networks.deep_sets.DeepSets
       hidden_sizes: [32]
+      out_size: 16
       activation: ${act:relu}
 
 rl_alg:

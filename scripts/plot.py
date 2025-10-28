@@ -37,11 +37,7 @@ def load_df(path: str | Path) -> pd.DataFrame:
 dfs = [
     load_df(p)
     for p in [
-        # "runs/ZoneEnv/tmp/logs.csv",
-        # "runs/ZoneEnv/tmp2/logs.csv",
-        # "runs/ZoneEnv/newstate/logs.csv",
-        # "runs/ZoneEnv/nocorrect/logs.csv",
-        "runs/ZoneEnv/sequential_long/logs.csv",
+        "runs/ZoneEnv/tmp/logs.csv",
     ]
 ]
 df = pd.concat(dfs, ignore_index=True)
@@ -50,5 +46,5 @@ df = pd.concat(dfs, ignore_index=True)
 # df["return"] = smooth(df["return"], 10)
 
 # fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-sns.lineplot(data=df, x="timestep", y="smooth_return", hue="name")
+sns.lineplot(data=df, x="timestep", y="smooth_return", hue="seed")
 plt.show()
