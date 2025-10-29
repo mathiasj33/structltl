@@ -25,7 +25,10 @@ class VectorizeWrapper[
     ):
         super().__init__(env)
 
-    @partial(jax.vmap, in_axes=(None, 0, None, None, None))
+    # We currently don't vmap over options at this level (options here are global for
+    # all parallel envs)
+    # Instead, each env's options get overridden by the env sampler at a lower wrapper
+    @partial(jax.vmap, in_axes=(None, 0, 0, None, None))
     def reset(
         self,
         key: jax.Array,
@@ -35,7 +38,7 @@ class VectorizeWrapper[
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
         return super().reset(key, state, params, options)
 
-    @partial(jax.vmap, in_axes=(None, 0, None, None, None))
+    @partial(jax.vmap, in_axes=(None, 0, 0, None, None))
     def cheap_reset(
         self,
         key: jax.Array,

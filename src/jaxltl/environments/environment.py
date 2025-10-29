@@ -65,7 +65,7 @@ class Environment[
     propositions: tuple[str, ...]
 
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=1)
+    @eqx.debug.assert_max_traces(max_traces=2)
     def reset(
         self,
         key: jax.Array,
@@ -92,7 +92,7 @@ class Environment[
         pass
 
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=1)
+    @eqx.debug.assert_max_traces(max_traces=2)
     def cheap_reset(
         self,
         key: jax.Array,
@@ -120,7 +120,7 @@ class Environment[
         pass
 
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=1)
+    @eqx.debug.assert_max_traces(max_traces=2)
     def step(
         self,
         key: jax.Array,

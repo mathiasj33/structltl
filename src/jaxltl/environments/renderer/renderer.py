@@ -11,7 +11,9 @@ from jaxltl.environments.environment import Environment, EnvObservation, EnvPara
 from jaxltl.environments.wrappers.wrapper import EnvWrapper
 
 
-class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
+class BaseRenderer[
+    TEnvState: eqx.Module, TObsFeatures: NamedTuple, TResetOptions: NamedTuple
+](ABC):
     """Base class for renderers."""
 
     def __init__(
@@ -68,9 +70,11 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
         self,
         env: Environment | EnvWrapper,
         params: EnvParams,
+        options: TResetOptions | None = None,
         time_scale: float = 1.0,
-        policy: Callable[[EnvObservation[TObsFeatures], jax.Array], jax.Array]
-        | None = None,
+        policy: (
+            Callable[[EnvObservation[TObsFeatures], jax.Array], jax.Array] | None
+        ) = None,
         key: jax.Array | None = None,
     ):
         """Run the environment with manual control.
@@ -87,7 +91,7 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
         if key is None:
             key = jax.random.key(0)
         key, key_reset = jax.random.split(key)
-        state, obs = env.reset(key_reset, None, params)
+        state, obs = env.reset(key_reset, None, params, options)
         action = policy(obs, key) if policy else env.action_space(params).sample(key)  # type: ignore
         # Warm-up step, make sure everything is jitted
         env.step(key, state, action, params)  # type: ignore

@@ -42,13 +42,26 @@ def main(cfg: DictConfig):
         jax.config.update("jax_default_device", jax.devices("cpu")[0])
         logger.info("Using CPU for training")
 
+    default_options = None
+    if "default_options" in cfg.env:
+        # Instantiate the default_options object from config.
+        # The fields will be standard python types (e.g., lists).
+        default_options_with_lists = hydra.utils.instantiate(cfg.env.default_options)
+
+        # Convert all leaf elements (the lists) in the pytree to jax arrays.
+        default_options = jax.tree.map(
+            lambda x: jnp.array(x, dtype=jnp.float32), default_options_with_lists
+        )
+
     env, env_params = jaxltl.make(cfg.env.name)
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
     curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
     env = CurriculumWrapper(env, curriculum)
-    env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
+    env = AutoResetWrapper(
+        env, reset_strategy=ResetStrategy.FULL, auto_reset_options=default_options
+    )
     env = LogWrapper(env)
     env = VectorizeWrapper(env)
 

@@ -1,4 +1,4 @@
-"""A 2D renderer for the zone environment based on pygame."""
+"""A 2D renderer for the RGB zone environment based on pygame."""
 
 import math
 from functools import partial
@@ -10,7 +10,7 @@ import pygame
 from pygame import gfxdraw
 
 from jaxltl.environments.renderer.renderer import BaseRenderer
-from jaxltl.environments.zone_env.zone_env import (
+from jaxltl.environments.rgb_zone_env.rgb_zone_env import (
     EnvParams,
     EnvState,
     ObsFeatures,
@@ -26,10 +26,14 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         grid_size: int = 50,
         show_lidar: bool = False,
     ):
-        super().__init__("Zone Environment", screen_size)
+        super().__init__("RGB Zone Environment", screen_size)
 
         self._params = params
         self._screen_size = screen_size
+        if show_lidar:
+            assert (
+                params.exteroception == "lidar"
+            ), "'lidar' exteroception must be enabled to show lidar"
         self.draw_lidar = show_lidar
 
         self._background = pygame.Surface(self._screen.get_size())
@@ -49,14 +53,6 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         self._agent_color = (59, 130, 246)  # blue-500
         self._agent_heading_color = (59, 130, 246, 180)  # blue-500 with alpha
 
-        # Color mapping for zones
-        self._zone_colors = {
-            0: (239, 68, 68, 180),  # red-500
-            1: (34, 197, 94, 180),  # green-500
-            2: (168, 85, 247, 180),  # purple-500
-            3: (234, 179, 8, 180),  # yellow-500
-        }
-
     def _render_background(self):
         """Draw checkerboard background."""
         self._background.fill(self._grid_color_1)
@@ -68,9 +64,9 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
 
     def _render_zones(self, state: EnvState):
         centers = self._world_to_screen(state.zone_centers).tolist()
+        rgbs = (state.zone_rgbs * 255).astype(jnp.int32).tolist()
         for i, center in enumerate(centers):
-            color_id = int(state.zone_colors[i])
-            col = self._zone_colors.get(color_id, (0, 0, 0))
+            col = (*rgbs[i], 180)
             self._draw_circle(self._screen, col, center, self._zone_radius_px)
 
     def _draw_circle(self, surface, color, position, radius):
@@ -149,12 +145,18 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         state: EnvState,
     ):
         self._lidar_surface.fill((0, 0, 0, 0))
-        points = self._compute_lidar_points(position, obs, state)  # (C, num_bins, 3)
+        points = self._compute_lidar_points(position, obs, state)  # (I, num_bins, 3)
         screen_pos = self._world_to_screen(points.reshape(-1, 3)[:, :2]).reshape(
             points.shape[0], points.shape[1], 2
         )
         points = points.at[:, :, :2].set(screen_pos).tolist()
-        for color, lidar_points in zip(self._zone_colors.values(), points, strict=True):
+
+        unique_rgbs = jax.vmap(
+            lambda i: state.zone_rgbs[jnp.argmax(state.zone_idxs == i)]
+        )(jnp.arange(self._params.num_idxs))
+        colors = (unique_rgbs * 255).astype(jnp.int32).tolist()
+
+        for color, lidar_points in zip(colors, points, strict=True):
             for point in lidar_points:
                 pos = point[:2]
                 strength = point[2]
@@ -176,7 +178,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         obs: ObsFeatures,
         state: EnvState,
     ) -> jax.Array:
-        # obs.lidar shape (C, num_bins)
+        # obs.lidar shape (I, num_bins)
         num_bins = obs.lidar.shape[1]
         bin_size = 2 * jnp.pi / num_bins
         bin_idx = state.angle // bin_size
