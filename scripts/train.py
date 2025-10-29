@@ -94,10 +94,13 @@ def main(cfg: DictConfig):
     for seed in range(cfg.num_seeds):
         seed_metrics = jax.tree.map(lambda x: x[seed], metrics)
         return_values = seed_metrics["episode_return"][seed_metrics["done"]].tolist()
+        lengths = seed_metrics["episode_length"][seed_metrics["done"]].tolist()
         timesteps = (
             seed_metrics["total_step"][seed_metrics["done"]] * cfg.rl_alg.num_envs
         ).tolist()
-        df = pd.DataFrame({"timestep": timesteps, "return": return_values})
+        df = pd.DataFrame(
+            {"timestep": timesteps, "return": return_values, "length": lengths}
+        )
         df["seed"] = seed
         dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)
