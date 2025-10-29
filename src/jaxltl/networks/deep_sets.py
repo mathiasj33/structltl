@@ -25,8 +25,8 @@ class DeepSets(CallableModule):
         *,
         key: jax.Array,
     ):
-        emb_key, mlp_key = jax.random.split(key, 2)
-        self.empty_embedding = jax.random.normal(emb_key, shape=(embedding_dim,))
+        empty_key, mlp_key = jax.random.split(key)
+        self.empty_embedding = jax.random.normal(empty_key, (embedding_dim,))
         self.mlp = MLP(
             embedding_dim,
             out_size,
@@ -40,10 +40,9 @@ class DeepSets(CallableModule):
 
     def __call__(self, x: jax.Array) -> jax.Array:
         """Input shape: (max_set_size,embedding_dim) with 0s for padding."""
-        embedding = jax.lax.cond(
+        emb = jax.lax.cond(
             jnp.all(x == 0),
             lambda: self.empty_embedding,
             lambda: jnp.sum(x, axis=0),
         )
-        out = self.mlp(embedding)
-        return out
+        return self.mlp(emb)
