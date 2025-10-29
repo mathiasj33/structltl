@@ -46,15 +46,25 @@ class AutoResetWrapper[
     """
 
     reset_strategy: ResetStrategy
+    use_term_trunc: bool
 
     def __init__(
         self,
         env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
         | Environment[TEnvState, TEnvParams, TObsFeatures],
         reset_strategy: ResetStrategy,
+        use_term_trunc: bool = True,
     ):
+        """
+        Params:
+            env: The environment to wrap.
+            reset_strategy: The reset strategy to use.
+            use_term_trunc: Whether to separate termination and truncation, or treat
+                truncation as a form of termination. This is what original Gym environments
+                do."""
         super().__init__(env)
         self.reset_strategy = reset_strategy
+        self.use_term_trunc = use_term_trunc
 
     @eqx.filter_jit
     def reset(
@@ -114,6 +124,11 @@ class AutoResetWrapper[
 
         # Truncation
         truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore
+        terminated = (
+            jnp.logical_or(transition.terminated, truncated)
+            if self.use_term_trunc
+            else transition.terminated
+        )
 
         # Auto-reset environment based on termination
         done = jnp.logical_or(transition.terminated, truncated)
@@ -123,7 +138,7 @@ class AutoResetWrapper[
                 done, lambda: obs_re, lambda: transition.observation
             ),
             reward=transition.reward,
-            terminated=transition.terminated,
+            terminated=terminated,
             truncated=truncated,
             terminal_observation=transition.terminal_observation,
             propositions=transition.propositions,
