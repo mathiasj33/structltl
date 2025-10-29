@@ -13,8 +13,11 @@ from jaxltl.environments.renderer.renderer import BaseRenderer
 from jaxltl.environments.rgb_zone_env.rgb_zone_env import (
     EnvParams,
     EnvState,
+    LidarObsFeatures,
     ObsFeatures,
+    PrivilegedObsFeatures,
     ResetOptions,
+    RGBLidarObsFeatures,
 )
 
 
@@ -107,6 +110,122 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
             self._draw_lidar(interpolated_position, obs, state)
 
         pygame.display.flip()
+
+    @override
+    def _format_obs_and_props(
+        self, obs: ObsFeatures, propositions: jax.Array, all_propositions: tuple[str]
+    ) -> str:
+        """Neatly formats the observations and propositions into a single string."""
+        output = ["\n--- Observations ---\n"]
+        if not isinstance(
+            obs, (LidarObsFeatures | RGBLidarObsFeatures | PrivilegedObsFeatures)
+        ):
+            output.append(f"{obs}\n")
+            output.append("--- Propositions ---\n")
+            output.append(self._format_propositions(propositions, all_propositions))
+            output.append("--------------------\n")
+            return "".join(output)
+
+        output.append(f"Type: {type(obs).__name__}\n")
+        for field, value in obs._asdict().items():
+            if not isinstance(value, jax.Array):
+                output.append(f"  {field}: {value}\n")
+                continue
+
+            if value.ndim == 2:
+                output.append(f"  {field}: shape {value.shape}\n")
+                if field == "rgb_lidar":
+                    output.append(self._format_rgb_lidar_field(value))
+                elif field == "lidar":
+                    output.append(self._format_lidar_field(value))
+                elif field == "privileged":
+                    output.append(self._format_privileged_field(value))
+            else:
+                with jnp.printoptions(precision=2, suppress=True):
+                    output.append(f"  {field}: {value}\n")
+
+        output.append("--- Propositions ---\n")
+        output.append(self._format_propositions(propositions, all_propositions))
+        output.append("--------------------\n")
+        return "".join(output)
+
+    def _format_rgb_lidar_field(self, value: jax.Array) -> str:
+        lines = []
+        detected_mask = value[:, 4] > 0
+        detected_count = jnp.sum(detected_mask)
+        lines.append(f"    Detected Lidar Rays: {detected_count}/{value.shape[0]}\n")
+
+        # Header
+        header = f"      {'Bin':>3} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Detected':>8}\n"
+        lines.append(header)
+        lines.append(
+            f"      {'-'*3}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*8}\n"
+        )
+
+        for i, row in enumerate(value):
+            lines.append(
+                f"      {i:3d} | {row[0]:5.2f} | {row[1]:5.2f} | {row[2]:5.2f} | {row[3]:9.2f} | {int(row[4]):8d}\n"
+            )
+        return "".join(lines)
+
+    def _format_lidar_field(self, value: jax.Array) -> str:
+        lines = []
+        num_colors, num_bins = value.shape
+
+        # Header
+        header_parts = [f"{'Bin':>3}"]
+        header_parts.extend([f"{f'C{i}':>5}" for i in range(num_colors)])
+        lines.append(f"    {' | '.join(header_parts)}\n")
+
+        # Separator
+        separator_parts = [f"{'-'*3}"]
+        separator_parts.extend([f"{'-'*5}" for _ in range(num_colors)])
+        lines.append(f"    {'-+-'.join(separator_parts)}\n")
+
+        # Data rows
+        for i in range(num_bins):
+            row_parts = [f"{i:3d}"]
+            row_parts.extend([f"{value[j, i]:5.2f}" for j in range(num_colors)])
+            lines.append(f"    {' | '.join(row_parts)}\n")
+
+        return "".join(lines)
+
+    def _format_privileged_field(self, value: jax.Array) -> str:
+        lines = []
+        num_zones, _ = value.shape
+        lines.append(f"    Privileged info for {num_zones} zones:\n")
+
+        # Header
+        header = f"      {'Zone':>4} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Sin':>5} | {'Cos':>5}\n"
+        lines.append(header)
+        lines.append(
+            f"      {'-'*4}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*5}-+-{'-'*5}\n"
+        )
+
+        # Data rows
+        for i, row in enumerate(value):
+            lines.append(
+                f"      {i:4d} | {row[0]:5.2f} | {row[1]:5.2f} | {row[2]:5.2f} | {row[3]:9.2f} | {row[4]:5.2f} | {row[5]:5.2f}\n"
+            )
+
+        return "".join(lines)
+
+    def _format_propositions(
+        self, propositions: jax.Array, all_propositions: tuple[str]
+    ) -> str:
+        """Formats the propositions into a string."""
+        lines = []
+        true_props = {p for p in propositions.tolist() if p != -1}
+
+        if not all_propositions:
+            return ""
+
+        max_len = max(len(p) for p in all_propositions)
+
+        for i, prop_name in enumerate(all_propositions):
+            is_true = i in true_props
+            lines.append(f"  {prop_name:<{max_len + 1}}: {is_true}\n")
+        return "".join(lines)
 
     def _draw_agent(self, position: jax.Array, angle: jax.Array):
         # Draw agent heading as a rectangle

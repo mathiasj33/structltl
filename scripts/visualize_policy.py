@@ -83,7 +83,14 @@ def main(cfg: DictConfig):
         raise ValueError(f"Unknown policy type: {cfg.policy}")
 
     renderer: BaseRenderer = env.get_renderer(params)
-    renderer.run_render_loop(env, params, options=None, policy=policy, time_scale=2)
+    renderer.run_render_loop(
+        env,
+        params,
+        options=None,
+        policy=policy,
+        time_scale=2,
+        print_debug=cfg.print_debug,
+    )
 
 
 def build_model(

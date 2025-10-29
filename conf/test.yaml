@@ -7,3 +7,4 @@ env:
   use_precomputed_resets: true # setting to true ignores default options
   precomputed_resets_path: sampled_resets_test.eqx
 policy: "model" # "teleop", "random" or "model"
+print_debug: false

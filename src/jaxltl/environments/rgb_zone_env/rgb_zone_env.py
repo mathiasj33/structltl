@@ -357,7 +357,7 @@ class RGBZoneEnv(
         """Compute the observation for a given state."""
         if params.exteroception == "lidar":
             lidar = self._compute_lidar(state, params)
-            return ObsFeatures(
+            return LidarObsFeatures(
                 acceleration=state.acceleration,
                 velocity=state.velocity,
                 angular_velocity=state.angular_velocity.reshape(1),
