@@ -37,8 +37,6 @@ class DeepLTLModel(ActorCritic):
         self.env_net = hydra.utils.instantiate(
             config.env_net, in_size=obs_dim, key=env_key
         )
-        if config.sequence.embedding_dim % 2 != 0:
-            raise ValueError("Embedding dimension must be even.")
         key, emb_key = jax.random.split(key)
         embedding_dim = config.sequence.embedding_dim
         self.embedding = nn.Embedding(
@@ -89,6 +87,8 @@ class DeepLTLModel(ActorCritic):
         return jnp.concatenate([x, emb], axis=-1)
 
     def _compute_sequence_embedding(self, seq: ReachAvoidSequence) -> jax.Array:
+        # TODO: explicit padding column rather than -1s
+
         def embed_assignment_set(indices: jax.Array) -> jax.Array:
             # indices shape: (num_assignments,)
             mask = indices != -1
@@ -96,10 +96,12 @@ class DeepLTLModel(ActorCritic):
             # embeddings shape: (num_assignments, embedding_dim)
             return self.deep_sets(embeddings)  # shape: (out_size,)
 
-        reach_emb = jax.vmap(embed_assignment_set)(seq.reach)
-        avoid_emb = jax.vmap(embed_assignment_set)(seq.avoid)
+        reach_emb = jax.vmap(embed_assignment_set)(seq.reach)[0, :]
+        avoid_emb = jax.vmap(embed_assignment_set)(seq.avoid)[0, :]
         reach_avoid = jnp.concatenate([reach_emb, avoid_emb], axis=-1)
         h0 = jnp.zeros((self.gru.hidden_size,))  # initial hidden state
+        return self.gru(reach_avoid, h0)
+        # return reach_avoid
 
         def gru_step(
             carry: tuple[jax.Array, int], inputs: jax.Array

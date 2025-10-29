@@ -115,7 +115,7 @@ class CurriculumWrapper[
                 transition.observation, new_state.seq
             ),
             reward=reward,
-            terminated=terminated,
+            terminated=jnp.logical_or(transition.terminated, terminated),
             truncated=transition.truncated,
             terminal_observation=SequenceObservation.from_obs(
                 transition.terminal_observation, new_state.seq
