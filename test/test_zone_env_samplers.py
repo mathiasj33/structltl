@@ -10,12 +10,17 @@ def test_reach_avoid_sampler():
         reach=(1, 3),
         avoid=(0, 2),
         num_assignments=4,
-        max_length=8,
+        max_length=9,
     )
     key = jax.random.key(0)
-    for _ in range(100):
+    for j in range(100):
         key, subkey = jax.random.split(key)
         seq = sampler.sample(subkey)
+
+        if j < 5:
+            print(
+                f"\nSampled Reach-Avoid Sequence ({j}):\nReach:\n{jax.device_get(seq.reach)}\nAvoid:\n{jax.device_get(seq.avoid)}"
+            )
 
         # Check shapes
         assert seq.reach.shape == (sampler.max_length, sampler.num_assignments)
@@ -45,3 +50,8 @@ def test_reach_avoid_sampler():
                     len(set(reach_set.tolist()) & set(last_reach_set.tolist()) - {-1})
                     == 0
                 )
+
+        for i in range(seq.depth, seq.reach.shape[0]):
+            # Check padding
+            assert jnp.all(seq.reach[i] == -1)
+            assert jnp.all(seq.avoid[i] == -1)

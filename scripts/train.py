@@ -24,6 +24,7 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
 from jaxltl.eqx_utils.training import ensemble_to_list
+from jaxltl.hydra_utils.utils import resolve_default_options
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
 
@@ -36,6 +37,8 @@ def main(cfg: DictConfig):
         jax.config.update("jax_default_device", jax.devices("cpu")[0])
         logger.info("Using CPU for training")
 
+    default_options = resolve_default_options(cfg.env)
+
     env, env_params = jaxltl.make(cfg.env.name)
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
@@ -44,7 +47,9 @@ def main(cfg: DictConfig):
     env = CurriculumWrapper(
         env, curriculum, episode_window=cfg.curriculum_wrapper.episode_window
     )
-    env = AutoResetWrapper(env, reset_strategy=ResetStrategy.FULL)
+    env = AutoResetWrapper(
+        env, reset_strategy=ResetStrategy.FULL, auto_reset_options=default_options
+    )
     env = LogWrapper(env)
     env = VectorizeWrapper(env)
 

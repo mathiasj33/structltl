@@ -1,4 +1,4 @@
-"""A 2D renderer for the zone environment based on pygame."""
+"""A 2D renderer for the RGB zone environment based on pygame."""
 
 import math
 from functools import partial
@@ -10,11 +10,14 @@ import pygame
 from pygame import gfxdraw
 
 from jaxltl.environments.renderer.renderer import BaseRenderer
-from jaxltl.environments.zone_env.zone_env import (
+from jaxltl.environments.rgb_zone_env.rgb_zone_env import (
     EnvParams,
     EnvState,
+    LidarObsFeatures,
     ObsFeatures,
+    PrivilegedObsFeatures,
     ResetOptions,
+    RGBLidarObsFeatures,
 )
 
 
@@ -26,10 +29,14 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         grid_size: int = 50,
         show_lidar: bool = False,
     ):
-        super().__init__("Zone Environment", screen_size)
+        super().__init__("RGB Zone Environment", screen_size)
 
         self._params = params
         self._screen_size = screen_size
+        if show_lidar:
+            assert (
+                params.exteroception == "lidar"
+            ), "'lidar' exteroception must be enabled to show lidar"
         self.draw_lidar = show_lidar
 
         self._background = pygame.Surface(self._screen.get_size())
@@ -49,14 +56,6 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         self._agent_color = (59, 130, 246)  # blue-500
         self._agent_heading_color = (59, 130, 246, 180)  # blue-500 with alpha
 
-        # Color mapping for zones
-        self._zone_colors = {
-            0: (239, 68, 68, 180),  # red-500
-            1: (34, 197, 94, 180),  # green-500
-            2: (168, 85, 247, 180),  # purple-500
-            3: (234, 179, 8, 180),  # yellow-500
-        }
-
     def _render_background(self):
         """Draw checkerboard background."""
         self._background.fill(self._grid_color_1)
@@ -68,9 +67,9 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
 
     def _render_zones(self, state: EnvState):
         centers = self._world_to_screen(state.zone_centers).tolist()
+        rgbs = (state.zone_rgbs * 255).astype(jnp.int32).tolist()
         for i, center in enumerate(centers):
-            color_id = int(state.zone_colors[i])
-            col = self._zone_colors.get(color_id, (0, 0, 0))
+            col = (*rgbs[i], 180)
             self._draw_circle(self._screen, col, center, self._zone_radius_px)
 
     def _draw_circle(self, surface, color, position, radius):
@@ -112,12 +111,15 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
 
         pygame.display.flip()
 
+    @override
     def _format_obs_and_props(
         self, obs: ObsFeatures, propositions: jax.Array, all_propositions: tuple[str]
     ) -> str:
         """Neatly formats the observations and propositions into a single string."""
         output = ["\n--- Observations ---\n"]
-        if not isinstance(obs, ObsFeatures):
+        if not isinstance(
+            obs, (LidarObsFeatures | RGBLidarObsFeatures | PrivilegedObsFeatures)
+        ):
             output.append(f"{obs}\n")
             output.append("--- Propositions ---\n")
             output.append(self._format_propositions(propositions, all_propositions))
@@ -132,8 +134,12 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
 
             if value.ndim == 2:
                 output.append(f"  {field}: shape {value.shape}\n")
-                if field == "lidar":
+                if field == "rgb_lidar":
+                    output.append(self._format_rgb_lidar_field(value))
+                elif field == "lidar":
                     output.append(self._format_lidar_field(value))
+                elif field == "privileged":
+                    output.append(self._format_privileged_field(value))
             else:
                 with jnp.printoptions(precision=2, suppress=True):
                     output.append(f"  {field}: {value}\n")
@@ -142,6 +148,25 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         output.append(self._format_propositions(propositions, all_propositions))
         output.append("--------------------\n")
         return "".join(output)
+
+    def _format_rgb_lidar_field(self, value: jax.Array) -> str:
+        lines = []
+        detected_mask = value[:, 4] > 0
+        detected_count = jnp.sum(detected_mask)
+        lines.append(f"    Detected Lidar Rays: {detected_count}/{value.shape[0]}\n")
+
+        # Header
+        header = f"      {'Bin':>3} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Detected':>8}\n"
+        lines.append(header)
+        lines.append(
+            f"      {'-'*3}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*8}\n"
+        )
+
+        for i, row in enumerate(value):
+            lines.append(
+                f"      {i:3d} | {row[0]:5.2f} | {row[1]:5.2f} | {row[2]:5.2f} | {row[3]:9.2f} | {int(row[4]):8d}\n"
+            )
+        return "".join(lines)
 
     def _format_lidar_field(self, value: jax.Array) -> str:
         lines = []
@@ -162,6 +187,26 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
             row_parts = [f"{i:3d}"]
             row_parts.extend([f"{value[j, i]:5.2f}" for j in range(num_colors)])
             lines.append(f"    {' | '.join(row_parts)}\n")
+
+        return "".join(lines)
+
+    def _format_privileged_field(self, value: jax.Array) -> str:
+        lines = []
+        num_zones, _ = value.shape
+        lines.append(f"    Privileged info for {num_zones} zones:\n")
+
+        # Header
+        header = f"      {'Zone':>4} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Sin':>5} | {'Cos':>5}\n"
+        lines.append(header)
+        lines.append(
+            f"      {'-'*4}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*5}-+-{'-'*5}\n"
+        )
+
+        # Data rows
+        for i, row in enumerate(value):
+            lines.append(
+                f"      {i:4d} | {row[0]:5.2f} | {row[1]:5.2f} | {row[2]:5.2f} | {row[3]:9.2f} | {row[4]:5.2f} | {row[5]:5.2f}\n"
+            )
 
         return "".join(lines)
 
@@ -219,12 +264,18 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         state: EnvState,
     ):
         self._lidar_surface.fill((0, 0, 0, 0))
-        points = self._compute_lidar_points(position, obs, state)  # (C, num_bins, 3)
+        points = self._compute_lidar_points(position, obs, state)  # (I, num_bins, 3)
         screen_pos = self._world_to_screen(points.reshape(-1, 3)[:, :2]).reshape(
             points.shape[0], points.shape[1], 2
         )
         points = points.at[:, :, :2].set(screen_pos).tolist()
-        for color, lidar_points in zip(self._zone_colors.values(), points, strict=True):
+
+        unique_rgbs = jax.vmap(
+            lambda i: state.zone_rgbs[jnp.argmax(state.zone_idxs == i)]
+        )(jnp.arange(self._params.num_idxs))
+        colors = (unique_rgbs * 255).astype(jnp.int32).tolist()
+
+        for color, lidar_points in zip(colors, points, strict=True):
             for point in lidar_points:
                 pos = point[:2]
                 strength = point[2]
@@ -246,7 +297,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         obs: ObsFeatures,
         state: EnvState,
     ) -> jax.Array:
-        # obs.lidar shape (C, num_bins)
+        # obs.lidar shape (I, num_bins)
         num_bins = obs.lidar.shape[1]
         bin_size = 2 * jnp.pi / num_bins
         bin_idx = state.angle // bin_size
