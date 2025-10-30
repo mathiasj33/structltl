@@ -27,10 +27,9 @@ def test_reach_avoid_sampler():
         assert seq.avoid.shape == (sampler.max_length, sampler.num_assignments)
 
         # Check depth constraints
-        num_depth = jnp.sum(seq.reach[:, 0] != -1)
-        assert sampler.depth[0] <= num_depth <= sampler.depth[1]
+        assert sampler.depth[0] <= seq.depth <= sampler.depth[1]
 
-        for i in range(num_depth):
+        for i in range(seq.depth):
             # Check reach set size constraints
             reach_set = seq.reach[i]
             num_reach = jnp.sum(reach_set != -1)
@@ -52,7 +51,7 @@ def test_reach_avoid_sampler():
                     == 0
                 )
 
-        for i in range(num_depth, seq.reach.shape[0]):
+        for i in range(seq.depth, seq.reach.shape[0]):
             # Check padding
             assert jnp.all(seq.reach[i] == -1)
             assert jnp.all(seq.avoid[i] == -1)

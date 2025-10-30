@@ -46,7 +46,8 @@ def load_df(path: str | Path) -> pd.DataFrame:
 dfs = [
     load_df(p)
     for p in [
-        "runs/ZoneEnv/curr/logs.csv",
+        "runs/ZoneEnv/tmp/logs.csv",
+        # "runs/RGBZoneEnv/tmp/logs.csv",
     ]
 ]
 df = pd.concat(dfs, ignore_index=True)
