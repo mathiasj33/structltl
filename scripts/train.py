@@ -24,6 +24,7 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
 from jaxltl.eqx_utils.training import ensemble_to_list
+from jaxltl.hydra_utils.utils import resolve_default_options
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
 
@@ -36,16 +37,7 @@ def main(cfg: DictConfig):
         jax.config.update("jax_default_device", jax.devices("cpu")[0])
         logger.info("Using CPU for training")
 
-    default_options = None
-    if "default_options" in cfg.env:
-        # Instantiate the default_options object from config.
-        # The fields will be standard python types (e.g., lists).
-        default_options_with_lists = hydra.utils.instantiate(cfg.env.default_options)
-
-        # Convert all leaf elements (the lists) in the pytree to jax arrays.
-        default_options = jax.tree.map(
-            lambda x: jnp.array(x, dtype=jnp.float32), default_options_with_lists
-        )
+    default_options = resolve_default_options(cfg.env)
 
     env, env_params = jaxltl.make(cfg.env.name)
     if cfg.env.use_precomputed_resets:
