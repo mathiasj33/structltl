@@ -1,18 +1,17 @@
 from enum import StrEnum, auto
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
-class WrappedState[TEnvState: eqx.Module, TObsFeatures: NamedTuple](eqx.Module):
+class AutoResetState[TObsFeatures: NamedTuple](WrapperState):
     timestep: jax.Array  # int
-    state: TEnvState
-    initial_state: TEnvState
+    initial_state: eqx.Module  # the initial state of the environment
     initial_obs: EnvObservation[TObsFeatures]
 
 
@@ -23,11 +22,10 @@ class ResetStrategy(StrEnum):
 
 
 class AutoResetWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
     TResetOptions: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
+](EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]):
     """Automatically reset the environment on termination or truncation.
 
     Due to JIT compilation requirements, we have to compute a new reset state at every
@@ -53,8 +51,8 @@ class AutoResetWrapper[
     def __init__(
         self,
         env: (
-            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
-            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
         ),
         reset_strategy: ResetStrategy,
         use_term_trunc: bool = True,
@@ -78,32 +76,32 @@ class AutoResetWrapper[
     def reset(
         self,
         key: jax.Array,
-        state: TEnvState | None,
+        state: AutoResetState[TObsFeatures] | None,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
+    ) -> tuple[AutoResetState[TObsFeatures], EnvObservation[TObsFeatures]]:
         if options is None:
             options = self.auto_reset_options
-        state, obs = super().reset(key, state, params, options)
-        return self._wrap_reset_state(state, obs), obs
+        re_state, obs = super().reset(key, state, params, options)
+        return self._wrap_reset_state(re_state, obs), obs
 
     @eqx.filter_jit
     def cheap_reset(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: AutoResetState[TObsFeatures],
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[WrappedState[TEnvState, TObsFeatures], EnvObservation[TObsFeatures]]:
+    ) -> tuple[AutoResetState[TObsFeatures], EnvObservation[TObsFeatures]]:
         if options is None:
             options = self.auto_reset_options
-        state, obs = super().cheap_reset(key, state, params, options)
-        return self._wrap_reset_state(state, obs), obs
+        re_state, obs = super().cheap_reset(key, state, params, options)
+        return self._wrap_reset_state(re_state, obs), obs
 
     def _wrap_reset_state(
-        self, state: TEnvState, obs: EnvObservation[TObsFeatures]
-    ) -> WrappedState[TEnvState, TObsFeatures]:
-        return WrappedState(
+        self, state: Any, obs: EnvObservation[TObsFeatures]
+    ) -> AutoResetState[TObsFeatures]:
+        return AutoResetState(
             timestep=jnp.array(0, dtype=jnp.int32),
             state=state,
             initial_state=state,
@@ -114,13 +112,13 @@ class AutoResetWrapper[
     def step(
         self,
         key: jax.Array,
-        state: WrappedState[TEnvState, TObsFeatures],
+        state: AutoResetState[TObsFeatures],
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> EnvTransition[WrappedState[TEnvState, TObsFeatures], TObsFeatures]:
+    ) -> EnvTransition[AutoResetState[TObsFeatures], TObsFeatures]:
         key_step, key_reset = jax.random.split(key, 2)
-        transition = super().step(key_step, state.state, action, params)
-        next_state = WrappedState(
+        transition = super().step(key_step, state, action, params)
+        next_state = AutoResetState(
             timestep=state.timestep + 1,
             state=transition.state,
             initial_state=state.initial_state,
@@ -129,7 +127,7 @@ class AutoResetWrapper[
         match self.reset_strategy:
             case ResetStrategy.INITIAL:
                 state_re, obs_re = state.initial_state, state.initial_obs
-                state_re = WrappedState(
+                state_re = AutoResetState(
                     timestep=jnp.array(0, dtype=jnp.int32),
                     state=state_re,
                     initial_state=state.initial_state,
@@ -137,14 +135,11 @@ class AutoResetWrapper[
                 )
             case ResetStrategy.CHEAP:
                 state_re, obs_re = self.cheap_reset(
-                    key_reset,
-                    transition.state,
-                    params,
-                    self.auto_reset_options,
+                    key_reset, next_state, params, self.auto_reset_options
                 )
             case ResetStrategy.FULL:
                 state_re, obs_re = self.reset(
-                    key_reset, transition.state, params, self.auto_reset_options
+                    key_reset, next_state, params, self.auto_reset_options
                 )
 
         # Truncation
@@ -170,6 +165,3 @@ class AutoResetWrapper[
             info=transition.info,
         )
         return transition
-
-    def unwrapped(self, state: WrappedState[TEnvState, TObsFeatures]) -> TEnvState:
-        return self._env.unwrapped(state.state)

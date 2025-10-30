@@ -18,7 +18,7 @@ from jaxltl.environments.zone_env.zone_env import (
 )
 
 
-class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
+class Renderer(BaseRenderer[ObsFeatures, ResetOptions]):
     def __init__(
         self,
         params: EnvParams,
@@ -91,6 +91,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         state: EnvState,
         previous_state: EnvState,
         obs: ObsFeatures,
+        propositions: jax.Array,
         alpha: float,
     ):
         """Render the environment state."""
@@ -153,8 +154,8 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         lines.append(f"    {' | '.join(header_parts)}\n")
 
         # Separator
-        separator_parts = [f"{'-'*3}"]
-        separator_parts.extend([f"{'-'*5}" for _ in range(num_colors)])
+        separator_parts = [f"{'-' * 3}"]
+        separator_parts.extend([f"{'-' * 5}" for _ in range(num_colors)])
         lines.append(f"    {'-+-'.join(separator_parts)}\n")
 
         # Data rows

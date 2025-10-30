@@ -1,33 +1,31 @@
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
-class LogEnvState[TEnvState: eqx.Module](eqx.Module):
-    state: TEnvState
+class LogEnvState(WrapperState):
     step: jax.Array  # int
     total_step: jax.Array  # int
     ret: jax.Array  # float
 
 
 class LogWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
     TResetOptions: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
+](EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]):
     """Log the episode returns and lengths to the info dict."""
 
     def __init__(
         self,
         env: (
-            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
-            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
         ),
     ):
         super().__init__(env)
@@ -36,25 +34,25 @@ class LogWrapper[
     def reset(
         self,
         key: jax.Array,
-        state: TEnvState | None,
+        state: LogEnvState | None,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
-        state, obs = super().reset(key, state, params, options)
-        return self._wrap_reset_state(state), obs
+    ) -> tuple[LogEnvState, EnvObservation[TObsFeatures]]:
+        re_state, obs = super().reset(key, state, params, options)
+        return self._wrap_reset_state(re_state), obs
 
     @eqx.filter_jit
     def cheap_reset(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: LogEnvState,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[LogEnvState[TEnvState], EnvObservation[TObsFeatures]]:
-        state, obs = super().cheap_reset(key, state, params, options)
-        return self._wrap_reset_state(state), obs
+    ) -> tuple[LogEnvState, EnvObservation[TObsFeatures]]:
+        re_state, obs = super().cheap_reset(key, state, params, options)
+        return self._wrap_reset_state(re_state), obs
 
-    def _wrap_reset_state(self, state: TEnvState) -> LogEnvState[TEnvState]:
+    def _wrap_reset_state(self, state: Any) -> LogEnvState:
         return LogEnvState(
             state=state,
             step=jnp.array(0, dtype=jnp.int32),
@@ -70,11 +68,11 @@ class LogWrapper[
         action: int | float | jax.Array,
         params: TEnvParams,
     ) -> EnvTransition[LogEnvState, TObsFeatures]:
-        transition = super().step(key, state.state, action, params)
+        transition = super().step(key, state, action, params)
         ret = transition.reward + state.ret
         length = state.step + 1
         total_step = state.total_step + 1
-        stage = transition.state.state.curriculum_stage  # TODO: add recursive access
+        stage = transition.state.curriculum_stage
         log_state = LogEnvState(
             step=(state.step + 1) * (1 - transition.done),
             state=transition.state,
@@ -98,6 +96,3 @@ class LogWrapper[
             propositions=transition.propositions,
             info=info,
         )
-
-    def unwrapped(self, state: LogEnvState) -> TEnvState:
-        return self._env.unwrapped(state.state)

@@ -12,19 +12,28 @@ import jax
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 
 
+class WrapperState(eqx.Module):
+    """Base class for wrapper states. Wrappers can add fields to this class to maintain
+    their own state."""
+
+    state: eqx.Module  # the state of the wrapped environment / previous wrapper
+
+    def __getattr__(self, name):
+        return getattr(self.state, name)
+
+
 class EnvWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
     TResetOptions: NamedTuple,
 ](eqx.Module):
     """Base class for environment wrappers."""
 
-    _env: "EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions] | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]"
+    _env: "EnvWrapper[TEnvParams, TObsFeatures, TResetOptions] | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]"
 
     def __init__(
         self,
-        env: "EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions] | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]",
+        env: "EnvWrapper[TEnvParams, TObsFeatures, TResetOptions] | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]",
     ):
         self._env = env
 
@@ -32,36 +41,32 @@ class EnvWrapper[
     def reset(
         self,
         key: jax.Array,
-        state: TEnvState | None,
+        state: WrapperState | None,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         return self._env.reset(key, state, params, options)
 
     @eqx.filter_jit
     def cheap_reset(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: WrapperState,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         return self._env.cheap_reset(key, state, params, options)
 
     @eqx.filter_jit
     def step(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: WrapperState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> EnvTransition[TEnvState, TObsFeatures]:
+    ) -> EnvTransition[WrapperState, TObsFeatures]:
         return self._env.step(key, state, action, params)
 
     # provide proxy access to regular attributes of wrapped environment
     def __getattr__(self, name):
         return getattr(self._env, name)
-
-    def unwrapped(self, state: Any) -> TEnvState:
-        """Returns the unwrapped environment state."""
-        return self._env.unwrapped(state)

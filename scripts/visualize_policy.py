@@ -36,7 +36,6 @@ def main(cfg: DictConfig):
     )
 
     if cfg.policy == "model":
-
         model = hydra.utils.instantiate(
             cfg.model,
             obs_dim=env.observation_space(params).shape[0],
@@ -63,11 +62,8 @@ def main(cfg: DictConfig):
             return env.action_space(params).sample(key)
 
         policy = random_policy
-
     elif cfg.policy == "teleop":
-
         policy = None
-
     else:
         raise ValueError(f"Unknown policy type: {cfg.policy}")
 

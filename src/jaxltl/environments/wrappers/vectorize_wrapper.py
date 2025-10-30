@@ -1,26 +1,24 @@
 from functools import partial
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
-import equinox as eqx
 import jax
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
 class VectorizeWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
     TResetOptions: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]):
+](EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]):
     """Vectorize the environment using vmap."""
 
     def __init__(
         self,
         env: (
-            EnvWrapper[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
-            | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
+            EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
         ),
     ):
         super().__init__(env)
@@ -32,28 +30,28 @@ class VectorizeWrapper[
     def reset(
         self,
         key: jax.Array,
-        state: TEnvState | None,
+        state: WrapperState | None,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         return super().reset(key, state, params, options)
 
     @partial(jax.vmap, in_axes=(None, 0, 0, None, None))
     def cheap_reset(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: WrapperState,
         params: TEnvParams,
         options: TResetOptions | None = None,
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         return super().cheap_reset(key, state, params, options)
 
     @partial(jax.vmap, in_axes=(None, 0, 0, 0, None))
     def step(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: WrapperState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> EnvTransition[TEnvState, TObsFeatures]:
+    ) -> EnvTransition[WrapperState, TObsFeatures]:
         return super().step(key, state, action, params)
