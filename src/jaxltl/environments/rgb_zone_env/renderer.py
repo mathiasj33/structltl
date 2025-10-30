@@ -21,7 +21,7 @@ from jaxltl.environments.rgb_zone_env.rgb_zone_env import (
 )
 
 
-class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
+class Renderer(BaseRenderer[ObsFeatures, ResetOptions]):
     def __init__(
         self,
         params: EnvParams,
@@ -34,9 +34,9 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         self._params = params
         self._screen_size = screen_size
         if show_lidar:
-            assert (
-                params.exteroception == "lidar"
-            ), "'lidar' exteroception must be enabled to show lidar"
+            assert params.exteroception == "lidar", (
+                "'lidar' exteroception must be enabled to show lidar"
+            )
         self.draw_lidar = show_lidar
 
         self._background = pygame.Surface(self._screen.get_size())
@@ -159,7 +159,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         header = f"      {'Bin':>3} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Detected':>8}\n"
         lines.append(header)
         lines.append(
-            f"      {'-'*3}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*8}\n"
+            f"      {'-' * 3}-+-{'-' * 5}-+-{'-' * 5}-+-{'-' * 5}-+-{'-' * 9}-+-{'-' * 8}\n"
         )
 
         for i, row in enumerate(value):
@@ -178,8 +178,8 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         lines.append(f"    {' | '.join(header_parts)}\n")
 
         # Separator
-        separator_parts = [f"{'-'*3}"]
-        separator_parts.extend([f"{'-'*5}" for _ in range(num_colors)])
+        separator_parts = [f"{'-' * 3}"]
+        separator_parts.extend([f"{'-' * 5}" for _ in range(num_colors)])
         lines.append(f"    {'-+-'.join(separator_parts)}\n")
 
         # Data rows
@@ -199,7 +199,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         header = f"      {'Zone':>4} | {'R':>5} | {'G':>5} | {'B':>5} | {'Intensity':>9} | {'Sin':>5} | {'Cos':>5}\n"
         lines.append(header)
         lines.append(
-            f"      {'-'*4}-+-{'-'*5}-+-{'-'*5}-+-{'-'*5}-+-{'-'*9}-+-{'-'*5}-+-{'-'*5}\n"
+            f"      {'-' * 4}-+-{'-' * 5}-+-{'-' * 5}-+-{'-' * 5}-+-{'-' * 9}-+-{'-' * 5}-+-{'-' * 5}\n"
         )
 
         # Data rows

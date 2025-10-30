@@ -543,7 +543,7 @@ class RGBZoneEnv(
 
     def get_renderer(
         self, env_params: EnvParams, **kwargs
-    ) -> "BaseRenderer[EnvState, ObsFeatures, ResetOptions]":
+    ) -> "BaseRenderer[ObsFeatures, ResetOptions]":
         """Returns a renderer for the environment."""
         from .renderer import Renderer
 

@@ -228,6 +228,6 @@ class Environment[
     @abstractmethod
     def get_renderer(
         self, params: TEnvParams, **kwargs
-    ) -> "BaseRenderer[TEnvState, TObsFeatures]":
+    ) -> "BaseRenderer[TObsFeatures, TResetOptions]":
         """Returns a renderer for the environment."""
         pass
