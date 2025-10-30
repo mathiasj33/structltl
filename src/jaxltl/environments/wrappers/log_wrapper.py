@@ -63,6 +63,7 @@ class LogWrapper[
         ret = transition.reward + state.ret
         length = state.step + 1
         total_step = state.total_step + 1
+        stage = transition.state.state.curriculum_stage  # TODO: add recursive access
         log_state = LogEnvState(
             step=(state.step + 1) * (1 - transition.done),
             state=transition.state,
@@ -73,6 +74,7 @@ class LogWrapper[
             "episode_return": ret,
             "episode_length": length,
             "total_step": total_step,
+            "curriculum_stage": stage,
             "done": transition.done,
         } | transition.info
         return EnvTransition(

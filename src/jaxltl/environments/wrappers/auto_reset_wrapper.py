@@ -116,11 +116,9 @@ class AutoResetWrapper[
                     initial_obs=state.initial_obs,
                 )
             case ResetStrategy.CHEAP:
-                state_re, obs_re = self.cheap_reset(
-                    key_reset, self._env.unwrapped(state.initial_state), params
-                )
+                state_re, obs_re = self.cheap_reset(key_reset, transition.state, params)
             case ResetStrategy.FULL:
-                state_re, obs_re = self.reset(key_reset, state.state, params)
+                state_re, obs_re = self.reset(key_reset, transition.state, params)
 
         # Truncation
         truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore

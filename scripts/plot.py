@@ -22,7 +22,11 @@ def load_df(path: str | Path) -> pd.DataFrame:
     bin_size = 4096 * 16
     df["bin"] = df["timestep"] // bin_size
 
-    avg_data = df.groupby(["seed", "bin"])[["return", "length"]].mean().reset_index()
+    avg_data = (
+        df.groupby(["seed", "bin"])[["return", "length", "curriculum_stage"]]
+        .mean()
+        .reset_index()
+    )
 
     avg_data["timestep"] = avg_data["bin"] * bin_size
 
@@ -42,25 +46,38 @@ def load_df(path: str | Path) -> pd.DataFrame:
 dfs = [
     load_df(p)
     for p in [
-        "runs/ZoneEnv/gru/logs.csv",
-        "runs/ZoneEnv/noterm/logs.csv",
+        "runs/ZoneEnv/curr/logs.csv",
     ]
 ]
 df = pd.concat(dfs, ignore_index=True)
 
 
-fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+fig, axes = plt.subplots(1, 3, figsize=(20, 5))
 
-sns.lineplot(data=df, x="timestep", y="return", hue="name", ax=axes[0], legend=False)
+sns.lineplot(
+    data=df, x="timestep", y="smooth_return", hue="name", ax=axes[0], legend=False
+)
 axes[0].set_title("Average Return")
 axes[0].set_ylabel("Smoothed Return")
 
-sns.lineplot(data=df, x="timestep", y="length", hue="name", ax=axes[1])
+sns.lineplot(
+    data=df, x="timestep", y="smooth_length", hue="name", ax=axes[1], legend=False
+)
 axes[1].set_title("Average Episode Length")
 axes[1].set_ylabel("Smoothed Length")
 
+sns.lineplot(
+    data=df,
+    x="timestep",
+    y="curriculum_stage",
+    hue="name",
+    ax=axes[2],
+)
+axes[2].set_title("Curriculum Stage")
+axes[2].set_ylabel("Curriculum Stage")
+
 # Move the legend outside the plot area
-sns.move_legend(axes[1], "upper left", bbox_to_anchor=(1, 1))
+sns.move_legend(axes[2], "upper left", bbox_to_anchor=(1, 1))
 
 plt.tight_layout()  # Adjust layout to prevent overlap
 plt.show()

@@ -23,7 +23,7 @@ make = lambda: PrecomputedCurriculum(
                 num_assignments=_num_assignments,
                 max_length=_max_length,
             ),
-            threshold=0.85,
+            threshold=0.8,
         ),
         # 2. Reach tasks of depth 2
         RandomCurriculumStage(

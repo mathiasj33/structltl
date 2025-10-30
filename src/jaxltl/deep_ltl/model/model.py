@@ -10,8 +10,8 @@ from omegaconf import DictConfig
 
 from jaxltl.deep_ltl.curriculum.sequence_sampler import ReachAvoidSequence
 from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
-from jaxltl.eqx_utils.gru_cell import GRUCell
 from jaxltl.networks.deep_sets import DeepSets
+from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
 from jaxltl.rl.actor_critic import ActorCritic
 
@@ -87,8 +87,6 @@ class DeepLTLModel(ActorCritic):
         return jnp.concatenate([x, emb], axis=-1)
 
     def _compute_sequence_embedding(self, seq: ReachAvoidSequence) -> jax.Array:
-        # TODO: explicit padding column rather than -1s
-
         def embed_assignment_set(indices: jax.Array) -> jax.Array:
             # indices shape: (num_assignments,)
             mask = indices != -1
@@ -96,12 +94,10 @@ class DeepLTLModel(ActorCritic):
             # embeddings shape: (num_assignments, embedding_dim)
             return self.deep_sets(embeddings)  # shape: (out_size,)
 
-        reach_emb = jax.vmap(embed_assignment_set)(seq.reach)[0, :]
-        avoid_emb = jax.vmap(embed_assignment_set)(seq.avoid)[0, :]
+        reach_emb = jax.vmap(embed_assignment_set)(seq.reach)
+        avoid_emb = jax.vmap(embed_assignment_set)(seq.avoid)
         reach_avoid = jnp.concatenate([reach_emb, avoid_emb], axis=-1)
         h0 = jnp.zeros((self.gru.hidden_size,))  # initial hidden state
-        return self.gru(reach_avoid, h0)
-        # return reach_avoid
 
         def gru_step(
             carry: tuple[jax.Array, int], inputs: jax.Array

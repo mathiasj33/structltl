@@ -8,6 +8,9 @@ defaults:
 curriculum:
   _target_: jaxltl.deep_ltl.curriculum.zone_env_curriculum.make
 
+curriculum_wrapper:
+  episode_window: 512
+
 model:
   _target_: jaxltl.deep_ltl.model.model.DeepLTLModel
   _recursive_: false
