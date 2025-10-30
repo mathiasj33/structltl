@@ -12,7 +12,12 @@ from jaxltl.deep_ltl.curriculum.sequence_sampler import (
 
 
 class CurriculumStage(eqx.Module):
-    threshold: float | None
+    threshold: float
+
+    def __init__(self, threshold: float | None):
+        if threshold is None:
+            threshold = jnp.inf
+        self.threshold = threshold
 
     @abstractmethod
     def sample(self, key: jax.Array) -> ReachAvoidSequence:
@@ -24,6 +29,10 @@ class RandomCurriculumStage(CurriculumStage):
 
     sampler: SequenceSampler
 
+    def __init__(self, sampler: SequenceSampler, threshold: float | None):
+        super().__init__(threshold)
+        self.sampler = sampler
+
     def sample(self, key: jax.Array) -> ReachAvoidSequence:
         return self.sampler.sample(key)
 
@@ -33,6 +42,18 @@ class MultiRandomStage(CurriculumStage):
 
     stages: list[RandomCurriculumStage]
     probs: jax.Array  # shape: (num_stages,)
+
+    def __init__(
+        self,
+        stages: list[RandomCurriculumStage],
+        probs: list[float],
+        threshold: float | None,
+    ):
+        super().__init__(threshold)
+        self.stages = stages
+        self.probs = jnp.array(probs, dtype=jnp.float32) / jnp.sum(
+            jnp.array(probs, dtype=jnp.float32)
+        )
 
     def sample(self, key: jax.Array) -> ReachAvoidSequence:
         key, stage_keys = jax.random.split(key)
@@ -57,6 +78,11 @@ class Curriculum(eqx.Module):
     def sample(self, stage: jax.Array, key: jax.Array) -> ReachAvoidSequence:
         branches = [lambda k, s=stage: s.sample(k) for stage in self.stages]
         return jax.lax.switch(stage, branches, key)
+
+    @eqx.filter_jit
+    def threshold(self, stage: jax.Array) -> jax.Array:
+        thresholds = jnp.array([s.threshold for s in self.stages], dtype=jnp.float32)
+        return thresholds[stage]
 
 
 class PrecomputedCurriculum(Curriculum):

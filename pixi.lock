@@ -1823,7 +1823,7 @@ packages:
 - pypi: ./
   name: jaxltl
   version: 0.1.0
-  sha256: 39d752beac62cfe7e1af3b217175031974ea419be25bca947f2eb06bf5e30046
+  sha256: 75353293e68945a23d93f188f60d9306b721269297ff61ffe434b40a59e6a46b
   requires_dist:
   - optax>=0.2.6,<0.3
   - equinox>=0.13.2,<0.14

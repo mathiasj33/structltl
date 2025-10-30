@@ -30,12 +30,6 @@ from jaxltl.rl.algorithm import RLAlgorithm
 logger = logging.getLogger(__name__)
 
 
-# TODO
-# 1. Finish model implementation with reach-avoid sequences
-# 2. Test with same curriculum stage throughout training
-# 3. Implement updating curriculum stage based on performance
-
-
 @hydra.main(version_base="1.1", config_path="../conf", config_name="train")
 def main(cfg: DictConfig):
     if not cfg.use_gpu:
@@ -58,7 +52,9 @@ def main(cfg: DictConfig):
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
     curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
-    env = CurriculumWrapper(env, curriculum)
+    env = CurriculumWrapper(
+        env, curriculum, episode_window=cfg.curriculum_wrapper.episode_window
+    )
     env = AutoResetWrapper(
         env, reset_strategy=ResetStrategy.FULL, auto_reset_options=default_options
     )
@@ -98,7 +94,7 @@ def main(cfg: DictConfig):
 
     logger.info("Starting training")
     models, metrics = jax.block_until_ready(
-        train(models, env, env_params, keys, callback, 100_000, seeds)
+        train(models, env, env_params, keys, callback, 1_000_000, seeds)
     )
     end_time = time.time()
     logger.info(f"Training completed in {end_time - start_time:.2f} seconds")
@@ -107,10 +103,19 @@ def main(cfg: DictConfig):
     for seed in range(cfg.num_seeds):
         seed_metrics = jax.tree.map(lambda x: x[seed], metrics)
         return_values = seed_metrics["episode_return"][seed_metrics["done"]].tolist()
+        lengths = seed_metrics["episode_length"][seed_metrics["done"]].tolist()
+        stages = seed_metrics["curriculum_stage"][seed_metrics["done"]].tolist()
         timesteps = (
             seed_metrics["total_step"][seed_metrics["done"]] * cfg.rl_alg.num_envs
         ).tolist()
-        df = pd.DataFrame({"timestep": timesteps, "return": return_values})
+        df = pd.DataFrame(
+            {
+                "timestep": timesteps,
+                "return": return_values,
+                "length": lengths,
+                "curriculum_stage": stages,
+            }
+        )
         df["seed"] = seed
         dfs.append(df)
     df = pd.concat(dfs, ignore_index=True)

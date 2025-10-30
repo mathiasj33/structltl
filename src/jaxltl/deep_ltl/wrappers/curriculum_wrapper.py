@@ -15,6 +15,10 @@ class CurriculumState[TEnvState: eqx.Module](eqx.Module):
     state: TEnvState
     seq: ReachAvoidSequence  # current reach-avoid sequence
     curriculum_stage: jax.Array  # current stage in the curriculum
+    last_returns: jax.Array  # shape (N,), returns from last N episodes
+    returns_index: jax.Array  # int, index to write next return into last_returns
+    # int, number of completed episodes in the current stage
+    current_stage_episodes: jax.Array
 
 
 class SequenceObservation[TObsFeatures: NamedTuple](EnvObservation[TObsFeatures]):
@@ -36,6 +40,7 @@ class CurriculumWrapper[
     """A wrapper that adds reach-avoid sequences sampled from a curriculum to the environment."""
 
     curriculum: Curriculum
+    episode_window: int  # number of episodes to consider for average return
 
     def __init__(
         self,
@@ -44,9 +49,11 @@ class CurriculumWrapper[
             | Environment[TEnvState, TEnvParams, TObsFeatures, TResetOptions]
         ),
         curriculum: Curriculum,
+        episode_window: int,
     ):
         super().__init__(env)
         self.curriculum = curriculum
+        self.episode_window = episode_window
 
     @eqx.filter_jit
     def reset(
@@ -60,8 +67,7 @@ class CurriculumWrapper[
         re_state, obs = super().reset(
             reset_key, state.state if state else None, params, options
         )
-        stage = state.curriculum_stage if state else jnp.zeros((), dtype=jnp.int32)
-        state = self._wrap_reset_state(stage, re_state, sample_key)
+        state = self._wrap_reset_state(state, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     @eqx.filter_jit
@@ -74,17 +80,60 @@ class CurriculumWrapper[
     ) -> tuple[CurriculumState[TEnvState], SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
         re_state, obs = super().cheap_reset(reset_key, state.state, params, options)
-        state = self._wrap_reset_state(state.curriculum_stage, re_state, sample_key)
+        state = self._wrap_reset_state(state, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     def _wrap_reset_state(
-        self, stage: jax.Array, state: TEnvState, key: jax.Array
+        self,
+        state: CurriculumState[TEnvState] | None,
+        re_state: TEnvState,
+        key: jax.Array,
     ) -> CurriculumState[TEnvState]:
+        if state is None:
+            stage = jnp.zeros((), dtype=jnp.int32)
+            return CurriculumState(
+                state=re_state,
+                seq=self.curriculum.sample(stage, key),
+                curriculum_stage=stage,
+                last_returns=jnp.zeros((self.episode_window,), dtype=jnp.float32),
+                returns_index=jnp.zeros((), dtype=jnp.int32),
+                current_stage_episodes=jnp.zeros((), dtype=jnp.int32),
+            )
+        threshold = self.curriculum.threshold(state.curriculum_stage)
+        avg_return = jax.lax.cond(
+            state.current_stage_episodes < self.episode_window,
+            lambda: -jnp.inf,
+            lambda: jnp.mean(state.last_returns),
+        )
+        change_stage = avg_return >= threshold
+        stage = jax.lax.cond(
+            change_stage,
+            lambda: state.curriculum_stage + 1,
+            lambda: state.curriculum_stage,
+        )
+        last_returns = jax.lax.cond(
+            change_stage,
+            lambda: jnp.zeros((self.episode_window,), dtype=jnp.float32),
+            lambda: state.last_returns,
+        )
+        current_stage_episodes = jax.lax.cond(
+            change_stage,
+            lambda: jnp.zeros((), dtype=jnp.int32),
+            lambda: state.current_stage_episodes,
+        )
+        returns_index = jax.lax.cond(
+            change_stage,
+            lambda: jnp.zeros((), dtype=jnp.int32),
+            lambda: state.returns_index,
+        )
         seq = self.curriculum.sample(stage, key)
         return CurriculumState(
-            state=state,
+            state=re_state,
             seq=seq,
             curriculum_stage=stage,
+            last_returns=last_returns,
+            returns_index=returns_index,
+            current_stage_episodes=current_stage_episodes,
         )
 
     @eqx.filter_jit
@@ -111,10 +160,23 @@ class CurriculumWrapper[
             lambda: jax.lax.cond(avoided, lambda: 0.0, lambda: -1.0),
         )
         terminated = jnp.logical_or(reached_end, ~avoided)
+        new_returns = state.last_returns.at[state.returns_index].set(
+            jax.nn.relu(reward)  # binary success indicator
+        )
+        last_returns = jnp.where(terminated, new_returns, state.last_returns)
+        returns_index = jnp.where(
+            terminated,
+            (state.returns_index + 1) % self.episode_window,
+            state.returns_index,
+        )
+        num_episodes = state.current_stage_episodes + terminated.astype(jnp.int32)
         new_state = CurriculumState(
             state=transition.state,
             seq=seq,
             curriculum_stage=state.curriculum_stage,
+            last_returns=last_returns,
+            returns_index=returns_index,
+            current_stage_episodes=num_episodes,
         )
         return EnvTransition(
             state=new_state,
@@ -122,7 +184,7 @@ class CurriculumWrapper[
                 transition.observation, new_state.seq
             ),
             reward=reward,
-            terminated=terminated,
+            terminated=jnp.logical_or(transition.terminated, terminated),
             truncated=transition.truncated,
             terminal_observation=SequenceObservation.from_obs(
                 transition.terminal_observation, new_state.seq

@@ -74,8 +74,9 @@ class ContinuousActor(eqx.Module):
         mean = jax.vmap(self.action_mean)(encoded)
         if self.action_std is not None:
             std = jax.vmap(self.action_std)(encoded)
-            std = jax.nn.softplus(std)
+            # numerical stability for large std
+            std = jnp.where(std >= 20, std, jax.nn.softplus(std))
         else:
             std = jnp.exp(self.log_std)[None, :].reshape(mean.shape)  # type: ignore
-        std += 1e-6  # numerical stability
+        std += 1e-3  # numerical stability
         return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)

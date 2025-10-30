@@ -271,12 +271,12 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures, ResetOptions]):
         angular_velocity = 0.0
 
         if keys[pygame.K_w]:
-            force = self._params.max_force
+            force = 1.0
         if keys[pygame.K_s]:
-            force = -self._params.max_force
+            force = -1.0
         if keys[pygame.K_a]:
-            angular_velocity = self._params.max_angular_velocity
+            angular_velocity = 1.0
         if keys[pygame.K_d]:
-            angular_velocity = -self._params.max_angular_velocity
+            angular_velocity = -1.0
 
         return jnp.array([force, angular_velocity])

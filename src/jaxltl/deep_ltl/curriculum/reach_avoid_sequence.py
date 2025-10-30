@@ -21,8 +21,8 @@ class ReachAvoidSequence(NamedTuple):
         return seq
 
     @property
-    def depth(self) -> int:
+    def depth(self) -> jax.Array:
         """Compute the depth of the sequence (number of non-padded steps)."""
 
         padded_steps = self.reach[:, 0] == -1
-        return int(jnp.sum(~padded_steps))
+        return jnp.sum(~padded_steps)

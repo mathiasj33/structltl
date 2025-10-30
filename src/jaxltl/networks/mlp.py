@@ -22,7 +22,7 @@ class MLP(CallableModule):
         out_size: int,
         hidden_sizes: list[int],
         activation: Callable[[jax.Array], jax.Array] = jax.nn.relu,
-        weight_init: Initializer | None = jax.nn.initializers.orthogonal(),  # noqa: B008
+        weight_init: Initializer | None = jax.nn.initializers.orthogonal(),
         bias_init: Initializer | None = jax.nn.initializers.zeros,
         *,
         final_layer_activation: bool = True,

@@ -16,12 +16,10 @@ from jaxltl.environments.wrappers.auto_reset_wrapper import (
 from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
-from jaxltl.rl.actor_critic import ActorCritic
 
 
 @hydra.main(version_base="1.1", config_path="../conf", config_name="test")
 def main(cfg: DictConfig):
-
     default_options = None
     if "default_options" in cfg.env:
         # Instantiate the default_options object from config.
@@ -41,14 +39,14 @@ def main(cfg: DictConfig):
             jaxltl.DATA_DIR / cfg.env.name / cfg.env.precomputed_resets_path,
         )
     curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
-    env = CurriculumWrapper(env, curriculum)
+    env = CurriculumWrapper(env, curriculum, episode_window=512)
     env = AutoResetWrapper(
         env, reset_strategy=ResetStrategy.FULL, auto_reset_options=default_options
     )
 
     if cfg.policy == "model":
 
-        model = build_model(
+        model = hydra.utils.instantiate(
             cfg.model,
             obs_dim=env.observation_space(params).shape[0],
             action_dim=env.action_space(params).shape[0],
@@ -88,26 +86,9 @@ def main(cfg: DictConfig):
         params,
         options=None,
         policy=policy,
-        time_scale=2,
+        time_scale=1,
         print_debug=cfg.print_debug,
     )
-
-
-def build_model(
-    model_cfg: DictConfig,
-    obs_dim: int,
-    action_dim: int,
-    num_assignments: int,
-    key: jax.Array,
-) -> ActorCritic:
-    model: ActorCritic = hydra.utils.instantiate(
-        model_cfg,
-        obs_dim=obs_dim,
-        action_dim=action_dim,
-        num_assignments=num_assignments,
-        key=key,
-    )
-    return model
 
 
 if __name__ == "__main__":
