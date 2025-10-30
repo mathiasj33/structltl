@@ -10,12 +10,12 @@ from jaxltl.deep_ltl.curriculum.curriculum import (
 )
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 from jaxltl.environments.wrappers import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import WrapperState
 
 
-class CurriculumState[TEnvState: eqx.Module](eqx.Module):
+class CurriculumState(WrapperState):
     """State for CurriculumWrapper."""
 
-    state: TEnvState
     seq: ReachAvoidSequence  # current reach-avoid sequence
     curriculum_stage: jax.Array  # current stage in the curriculum
     last_returns: jax.Array  # shape (N,), returns from last N episodes
@@ -35,10 +35,9 @@ class SequenceObservation[TObsFeatures: NamedTuple](EnvObservation[TObsFeatures]
 
 
 class CurriculumWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+](EnvWrapper[TEnvParams, TObsFeatures]):
     """A wrapper that adds reach-avoid sequences sampled from a curriculum to the environment."""
 
     curriculum: Curriculum
@@ -46,8 +45,8 @@ class CurriculumWrapper[
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: EnvWrapper[TEnvParams, TObsFeatures]
+        | Environment[Any, TEnvParams, TObsFeatures],
         curriculum: Curriculum,
         episode_window: int,
     ):
@@ -59,29 +58,29 @@ class CurriculumWrapper[
     def reset(
         self,
         key: jax.Array,
-        state: CurriculumState[TEnvState] | None,
+        state: CurriculumState | None,
         params: TEnvParams,
-    ) -> tuple[CurriculumState[TEnvState], SequenceObservation[TObsFeatures]]:
+    ) -> tuple[CurriculumState, SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
-        re_state, obs = super().reset(reset_key, state.state if state else None, params)
+        re_state, obs = super().reset(reset_key, state, params)
         state = self._wrap_reset_state(state, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: CurriculumState[TEnvState], params: TEnvParams
-    ) -> tuple[CurriculumState[TEnvState], SequenceObservation[TObsFeatures]]:
+        self, key: jax.Array, state: CurriculumState, params: TEnvParams
+    ) -> tuple[CurriculumState, SequenceObservation[TObsFeatures]]:
         reset_key, sample_key = jax.random.split(key)
-        re_state, obs = super().cheap_reset(reset_key, state.state, params)
+        re_state, obs = super().cheap_reset(reset_key, state, params)
         state = self._wrap_reset_state(state, re_state, sample_key)
         return state, SequenceObservation.from_obs(obs, state.seq)
 
     def _wrap_reset_state(
         self,
-        state: CurriculumState[TEnvState] | None,
-        re_state: TEnvState,
+        state: CurriculumState | None,
+        re_state: WrapperState,
         key: jax.Array,
-    ) -> CurriculumState[TEnvState]:
+    ) -> CurriculumState:
         if state is None:
             stage = jnp.zeros((), dtype=jnp.int32)
             return CurriculumState(
@@ -133,11 +132,11 @@ class CurriculumWrapper[
     def step(
         self,
         key: jax.Array,
-        state: CurriculumState[TEnvState],
+        state: CurriculumState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> EnvTransition[CurriculumState[TEnvState], TObsFeatures]:
-        transition = super().step(key, state.state, action, params)
+    ) -> EnvTransition[CurriculumState, TObsFeatures]:
+        transition = super().step(key, state, action, params)
         reach = state.seq.reach[0]  # (num_assignments,)
         avoid = state.seq.avoid[0]
         assignment = self._env.map_assignment_to_index(transition.propositions)
@@ -185,6 +184,3 @@ class CurriculumWrapper[
             propositions=transition.propositions,
             info=transition.info,
         )
-
-    def unwrapped(self, state: Any) -> TEnvState:
-        return self._env.unwrapped(state.state)

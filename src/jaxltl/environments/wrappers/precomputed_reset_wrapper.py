@@ -1,9 +1,5 @@
-"""Environment wrapper that resets to precomputed states loaded from disk. For environments
-with an expensive reset function, this can significantly speed up training. See scripts/precompute_resets.py
-for a script to precompute and save reset states."""
-
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
@@ -11,21 +7,24 @@ import jax.numpy as jnp
 
 from jaxltl import eqx_utils
 from jaxltl.environments.environment import Environment, EnvObservation
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
 class PrecomputedResetWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
-    reset_states: TEnvState  # batched reset states
+](EnvWrapper[TEnvParams, TObsFeatures]):
+    """Environment wrapper that resets to precomputed states loaded from disk. For environments
+    with an expensive reset function, this can significantly speed up training. See scripts/precompute_resets.py
+    for a script to precompute and save reset states."""
+
+    reset_states: WrapperState  # batched reset states
     num_reset_states: int
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: EnvWrapper[TEnvParams, TObsFeatures]
+        | Environment[Any, TEnvParams, TObsFeatures],
         params: TEnvParams,
         path: str | Path,
     ):
@@ -40,13 +39,13 @@ class PrecomputedResetWrapper[
 
     @eqx.filter_jit
     def reset(
-        self, key: jax.Array, state: TEnvState | None, params: TEnvParams
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        self, key: jax.Array, state: WrapperState | None, params: TEnvParams
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         state = self._sample_random_reset_state(key)
         obs = self._env.compute_obs(state, params)
         return state, obs
 
-    def _sample_random_reset_state(self, key: jax.Array) -> TEnvState:
+    def _sample_random_reset_state(self, key: jax.Array) -> WrapperState:
         index = jax.random.randint(
             key, shape=(), minval=0, maxval=self.num_reset_states
         )
@@ -54,6 +53,6 @@ class PrecomputedResetWrapper[
 
     @eqx.filter_jit
     def cheap_reset(
-        self, key: jax.Array, state: TEnvState, params: TEnvParams
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        self, key: jax.Array, state: WrapperState, params: TEnvParams
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
         return self.reset(key, state, params)

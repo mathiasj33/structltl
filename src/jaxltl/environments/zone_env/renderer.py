@@ -13,7 +13,7 @@ from jaxltl.environments.renderer.renderer import BaseRenderer
 from jaxltl.environments.zone_env.zone_env import EnvParams, EnvState, ObsFeatures
 
 
-class Renderer(BaseRenderer[EnvState, ObsFeatures]):
+class Renderer(BaseRenderer[ObsFeatures]):
     def __init__(
         self,
         params: EnvParams,

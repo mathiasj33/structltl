@@ -3,15 +3,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import NamedTuple
 
-import equinox as eqx
 import jax
 import pygame
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvParams
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
-class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
+class BaseRenderer[TObsFeatures: NamedTuple](ABC):
     """Base class for renderers."""
 
     def __init__(
@@ -29,8 +28,8 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
     @abstractmethod
     def render(
         self,
-        state: TEnvState,
-        previous_state: TEnvState,
+        state: WrapperState,
+        previous_state: WrapperState,
         obs: TObsFeatures,
         alpha: float,
     ):
@@ -128,6 +127,4 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
 
             # Calculate interpolation factor
             alpha = float(time_accumulator / params.dt)
-            self.render(
-                env.unwrapped(state), env.unwrapped(previous_state), obs.features, alpha
-            )
+            self.render(state, previous_state, obs.features, alpha)
