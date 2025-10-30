@@ -36,7 +36,6 @@ model:
       hidden_sizes: [32]
       out_size: 16
       activation: ${act:relu}
-  embedding_dim: 32
 
 rl_alg:
   total_timesteps: 5e6
