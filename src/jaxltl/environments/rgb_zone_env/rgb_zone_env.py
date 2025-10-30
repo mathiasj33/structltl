@@ -305,9 +305,13 @@ class RGBZoneEnv(
         action: jax.Array,
         params: EnvParams,
     ) -> tuple[EnvState, jax.Array, jax.Array, dict[Any, Any]]:
-        force = jnp.clip(action[0], -params.max_force, params.max_force)
+        force = jnp.clip(
+            action[0] * params.max_force, -params.max_force, params.max_force
+        )
         target_angular_velocity = jnp.clip(
-            action[1], -params.max_angular_velocity, params.max_angular_velocity
+            action[1] * params.max_angular_velocity,
+            -params.max_angular_velocity,
+            params.max_angular_velocity,
         )
         heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
         acceleration = heading * force
@@ -323,17 +327,12 @@ class RGBZoneEnv(
 
         position = state.position + velocity * params.dt
 
-        # If the agent is out of bounds, reflect its velocity and clamp its position
-        # to the edge of the world.
-        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
-        velocity = jnp.where(jnp.abs(position) > half_size, -velocity, velocity)
-        position = jnp.clip(position, -half_size, half_size)
-
         angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
         angular_velocity = target_angular_velocity
 
         reward = jnp.zeros((), dtype=jnp.float32)
-        terminated = jnp.zeros((), dtype=jnp.bool)
+        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
+        terminated = jnp.any(jnp.abs(position) > half_size)
 
         next_state = EnvState(
             position=position,

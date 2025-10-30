@@ -44,7 +44,7 @@ def main(cfg: DictConfig):
             num_assignments=5,
             key=jax.random.key(0),
         )
-        model = eqx_utils.load(f"runs/{cfg.env.name}/tmp/model.eqx", model)
+        model = eqx_utils.load(f"runs/{cfg.env.name}/{cfg.run}/model.eqx", model)
 
         @jax.jit
         def model_policy(obs: environment.EnvObservation, key: jax.Array) -> jax.Array:

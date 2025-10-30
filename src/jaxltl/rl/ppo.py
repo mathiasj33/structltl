@@ -55,7 +55,7 @@ class PPO(RLAlgorithm):
 
     @override
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=2)
+    @eqx.debug.assert_max_traces(max_traces=1)
     def train(
         self,
         model: ActorCritic,
