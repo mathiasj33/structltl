@@ -12,6 +12,7 @@ import jax
 import jax.experimental
 import jax.numpy as jnp
 import optax
+from jax.experimental import io_callback
 from jaxtyping import PyTree
 
 from jaxltl import eqx_utils
@@ -126,9 +127,10 @@ class PPO(RLAlgorithm):
                 step, carry, None, updates_per_callback
             )
             if callback:
-                step_count = carry[4]
+                train_state, step_count = carry[0], carry[4]
                 total_step = step_count * self.config.num_envs * self.config.num_steps
-                jax.experimental.io_callback(callback, None, metric, seed, total_step)
+                params, _ = eqx.partition(train_state.model, eqx.is_array)
+                io_callback(callback, None, metric, params, seed, total_step)
             return carry, metric
 
         key, update_key = jax.random.split(key)
@@ -175,8 +177,6 @@ class PPO(RLAlgorithm):
             env_params,
             key=rollout_key,
         )
-
-        # TODO: callable for rollout data in order to update curriculum stage
 
         advantages, targets = self._calculate_gae(trajs, last_obs, train_state.model)
 

@@ -3,7 +3,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl.deep_ltl.curriculum.curriculum import (
-    ReachAvoidSequence,
+    JaxReachAvoidSequence,
     SequenceSampler,
 )
 from jaxltl.deep_ltl.curriculum.sampling_utils import sample_assignments
@@ -37,7 +37,7 @@ class ZoneReachAvoidSampler(SequenceSampler):
         self.avoid = avoid
 
     @eqx.filter_jit
-    def sample(self, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, key: jax.Array) -> JaxReachAvoidSequence:
         key, depth_key = jax.random.split(key)
         depth = jax.random.randint(depth_key, (), self.depth[0], self.depth[1] + 1)
 
@@ -96,4 +96,4 @@ class ZoneReachAvoidSampler(SequenceSampler):
         # 4. Extract the final arrays from the carry
         _, _, final_reach_seq, final_avoid_seq = final_carry
 
-        return ReachAvoidSequence(reach=final_reach_seq, avoid=final_avoid_seq)
+        return JaxReachAvoidSequence(reach=final_reach_seq, avoid=final_avoid_seq)

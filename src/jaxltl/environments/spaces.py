@@ -13,6 +13,8 @@ import jax.numpy as jnp
 class Space(eqx.Module):
     """Minimal jittable class for abstract space."""
 
+    shape: eqx.AbstractVar[tuple]
+
     @abstractmethod
     def sample(self, key: jax.Array) -> jax.Array:
         pass

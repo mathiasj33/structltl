@@ -3,6 +3,8 @@ outputs/
 runs/
 *.zip
 data/
+dependencies/
+ldba.png
 
 # pixi environments
 .pixi

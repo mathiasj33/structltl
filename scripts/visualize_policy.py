@@ -40,7 +40,7 @@ def main(cfg: DictConfig):
             cfg.model,
             obs_dim=env.observation_space(params).shape[0],
             action_dim=env.action_space(params).shape[0],
-            num_assignments=5,
+            num_assignments=len(env.assignments),
             key=jax.random.key(0),
         )
         model = eqx_utils.load(f"runs/{cfg.env.name}/{cfg.run}/model.eqx", model)

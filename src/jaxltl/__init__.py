@@ -7,6 +7,8 @@ from jaxltl.hydra_utils.utils import register_custom_resolvers
 
 register_custom_resolvers()
 
-DATA_DIR = Path(__file__).parent.parent.parent / "data"
+_root = Path(__file__).parent.parent.parent
+DATA_DIR = _root / "data"
+DEPENDENCIES_DIR = _root / "dependencies"
 
-__all__ = ["make", "DATA_DIR"]
+__all__ = ["make", "DATA_DIR", "DEPENDENCIES_DIR"]

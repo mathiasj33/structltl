@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl.environments.spaces import Space
+from jaxltl.ltl.logic.assignment import Assignment
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -63,6 +64,12 @@ class Environment[
     default_params: TEnvParams
     # Maps indices in obs.propositions to names
     propositions: tuple[str, ...]
+    assignments_array: jax.Array  # shape: (num_assignments, num_propositions) int32
+
+    def __init__(self, default_params: TEnvParams, propositions: tuple[str, ...]):
+        self.default_params = default_params
+        self.propositions = propositions
+        self.assignments_array = self._compute_assignments_array()
 
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=2)
@@ -204,16 +211,33 @@ class Environment[
         Returns:
             jax.Array of shape () int32: index in assignments array
         """
-        matches = jnp.all(self.assignments == assignment, axis=1)  # (num_assignments,)
+        # (num_assignments,)
+        matches = jnp.all(self.assignments_array == assignment, axis=1)
         return jnp.argmax(matches)  # () int32
+
+    def _compute_assignments_array(self) -> jax.Array:
+        """Returns the possible assignments in the environment in array form.
+
+        Returns:
+            jax.Array of shape (num_assignments, num_propositions) int32
+        """
+        assignments = -jnp.ones(
+            (len(self.assignments), len(self.propositions)), dtype=jnp.int32
+        )
+        for i, assignment in enumerate(self.assignments):
+            prop_indices = sorted(
+                [self.propositions.index(p) for p in assignment], reverse=True
+            )
+            # padding
+            prop_indices += [-1] * (len(self.propositions) - len(prop_indices))
+            prop_indices = jnp.array(prop_indices, dtype=jnp.int32)
+            assignments = assignments.at[i, :].set(prop_indices)
+        return assignments
 
     @property
     @abstractmethod
-    def assignments(self) -> jax.Array:
-        """Returns the possible assignments in the environment.
-
-        Returns: array of shape (num_assignments, num_propositions) int32
-        """
+    def assignments(self) -> list[Assignment]:
+        """Returns the possible assignments as a list of Assignment objects."""
         pass
 
     @property
@@ -231,3 +255,22 @@ class Environment[
     ) -> "BaseRenderer[TObsFeatures, TResetOptions]":
         """Returns a renderer for the environment."""
         pass
+
+    def plot_trajectories(
+        self,
+        trajs: TEnvState,
+        lengths: jax.Array,
+        params: TEnvParams,
+        **plotting_kwargs,
+    ) -> None:
+        """Plots trajectories of environment states.
+
+        Args:
+            trajs: Batched EnvStates of shape (num_episodes, max_length, ...)
+            lengths: Trajectory lengths (num_episodes,) int32
+            params: Environment parameters
+            plotting_kwargs: Additional keyword arguments for the plotting function
+        """
+        raise NotImplementedError(
+            f"plot_trajectories not implemented for {self.name} environment."
+        )

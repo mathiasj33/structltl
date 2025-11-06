@@ -5,7 +5,7 @@ from abc import abstractmethod
 import equinox as eqx
 import jax
 
-from jaxltl.deep_ltl.curriculum.reach_avoid_sequence import ReachAvoidSequence
+from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 
 
 class SequenceSampler(eqx.Module):
@@ -19,6 +19,6 @@ class SequenceSampler(eqx.Module):
         self.max_length = max_length
 
     @abstractmethod
-    def sample(self, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, key: jax.Array) -> JaxReachAvoidSequence:
         """Sample a reach-avoid sequence."""
         pass

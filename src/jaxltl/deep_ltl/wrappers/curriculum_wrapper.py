@@ -4,7 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from jaxltl.deep_ltl.curriculum.curriculum import Curriculum, ReachAvoidSequence
+from jaxltl.deep_ltl.curriculum.curriculum import Curriculum, JaxReachAvoidSequence
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 from jaxltl.environments.wrappers import EnvWrapper
 from jaxltl.environments.wrappers.wrapper import WrapperState
@@ -13,7 +13,7 @@ from jaxltl.environments.wrappers.wrapper import WrapperState
 class CurriculumState(WrapperState):
     """State for CurriculumWrapper."""
 
-    seq: ReachAvoidSequence  # current reach-avoid sequence
+    seq: JaxReachAvoidSequence  # current reach-avoid sequence
     curriculum_stage: jax.Array  # current stage in the curriculum
     last_returns: jax.Array  # shape (N,), returns from last N episodes
     returns_index: jax.Array  # int, index to write next return into last_returns
@@ -24,10 +24,10 @@ class CurriculumState(WrapperState):
 class SequenceObservation[TObsFeatures: NamedTuple](EnvObservation[TObsFeatures]):
     """Observation returned by CurriculumWrapper."""
 
-    seq: ReachAvoidSequence
+    seq: JaxReachAvoidSequence
 
     @classmethod
-    def from_obs(cls, obs: EnvObservation[TObsFeatures], seq: ReachAvoidSequence):
+    def from_obs(cls, obs: EnvObservation[TObsFeatures], seq: JaxReachAvoidSequence):
         return cls(features=obs.features, seq=seq)
 
 
@@ -147,7 +147,7 @@ class CurriculumWrapper[
         assignment = self._env.map_assignment_to_index(transition.propositions)
         avoided = jnp.logical_not(jnp.any(avoid == assignment))
         reached = jnp.logical_and(jnp.any(reach == assignment), avoided)
-        seq: ReachAvoidSequence = jax.lax.cond(
+        seq: JaxReachAvoidSequence = jax.lax.cond(
             reached, lambda: state.seq.advance(), lambda: state.seq
         )
         reached_end = jnp.all(seq.reach[0] == -1)  # Check if reached is just padding

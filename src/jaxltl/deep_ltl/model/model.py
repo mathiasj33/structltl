@@ -8,7 +8,7 @@ from equinox import nn
 from jaxtyping import PyTree
 from omegaconf import DictConfig
 
-from jaxltl.deep_ltl.curriculum.sequence_sampler import ReachAvoidSequence
+from jaxltl.deep_ltl.curriculum.sequence_sampler import JaxReachAvoidSequence
 from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
 from jaxltl.networks.deep_sets import DeepSets
 from jaxltl.networks.gru_cell import GRUCell
@@ -86,7 +86,7 @@ class DeepLTLModel(ActorCritic):
         emb = jax.vmap(self._compute_sequence_embedding)(obs.seq)
         return jnp.concatenate([x, emb], axis=-1)
 
-    def _compute_sequence_embedding(self, seq: ReachAvoidSequence) -> jax.Array:
+    def _compute_sequence_embedding(self, seq: JaxReachAvoidSequence) -> jax.Array:
         def embed_assignment_set(indices: jax.Array) -> jax.Array:
             # indices shape: (num_assignments,)
             mask = indices != -1

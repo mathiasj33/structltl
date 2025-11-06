@@ -43,7 +43,7 @@ class Renderer(BaseRenderer[ObsFeatures, ResetOptions]):
         self._lidar_surface = pygame.Surface(self._screen.get_size(), pygame.SRCALPHA)
 
         self._world_to_screen_scale = screen_size / params.world_size
-        self._agent_radius_px = int(params.agent_radius * self._world_to_screen_scale)
+        self._agent_radius_px = int(0.1 * self._world_to_screen_scale)
         self._zone_radius_px = int(params.zone_radius * self._world_to_screen_scale)
 
         # Checkerboard background

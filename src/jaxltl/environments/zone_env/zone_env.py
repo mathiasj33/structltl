@@ -17,6 +17,8 @@ import jax.numpy as jnp
 from jax import lax
 
 from jaxltl.environments import environment, spaces
+from jaxltl.environments.zone_env.plotter import draw_trajectories
+from jaxltl.ltl.logic.assignment import Assignment
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -28,7 +30,6 @@ _MAX_SAMPLING_ITERS = 1000
 @dataclass(frozen=True)
 class EnvParams(environment.EnvParams):
     # World
-    agent_radius: float
     world_size: float
     spawn_size: float
     # Zones
@@ -72,7 +73,6 @@ class ResetOptions(NamedTuple):
 class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOptions]):
     default_params = EnvParams(
         max_steps_in_episode=1000,
-        agent_radius=0.1,
         world_size=6.6,
         spawn_size=5.0,
         zone_radius=0.4,
@@ -272,7 +272,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         angular_velocity = target_angular_velocity
 
         reward = jnp.zeros((), dtype=jnp.float32)
-        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
+        half_size = params.world_size / 2.0
         terminated = jnp.any(jnp.abs(position) > half_size)
 
         next_state = EnvState(
@@ -362,7 +362,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         colors = state.zone_colors  # (N,)
 
         dists = jnp.linalg.norm(centers - pos, axis=1)  # (N,)
-        inside = dists < params.zone_radius + params.agent_radius  # (N,)
+        inside = dists < params.zone_radius  # (N,)
 
         def compute_color_prop(color_id: jax.Array) -> jax.Array:
             mask_color = colors == color_id  # (N,)
@@ -375,20 +375,13 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
 
     @property
     @override
-    def assignments(self) -> jax.Array:
-        """Returns the possible assignments in the environment.
+    def assignments(self) -> list[Assignment]:
+        """Returns all possible assignments in the environment."""
+        assignments = [Assignment(frozenset({color})) for color in self.propositions]
+        assignments.append(Assignment(frozenset()))  # empty assignment
+        return assignments
 
-        Returns: array of shape (num_assignments, C) int32
-        """
-        color_assignments = jnp.arange(len(self.propositions)).reshape(-1, 1)
-        empty_assignment = jnp.array([[-1]], dtype=jnp.int32)
-        assignments = jnp.vstack([color_assignments, empty_assignment])
-        padding = -jnp.ones(
-            (assignments.shape[0], len(self.propositions) - 1),
-            dtype=jnp.int32,
-        )
-        return jnp.hstack([assignments, padding])
-
+    @override
     def get_renderer(
         self, env_params: EnvParams, **kwargs
     ) -> "BaseRenderer[ObsFeatures, ResetOptions]":
@@ -396,3 +389,26 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         from .renderer import Renderer
 
         return Renderer(env_params, **kwargs)
+
+    @override
+    def plot_trajectories(
+        self,
+        trajs: EnvState,
+        lengths: jax.Array,
+        params: EnvParams,
+        **plotting_kwargs,
+    ) -> None:
+        """Plots trajectories of environment states.
+
+        Args:
+            trajs: Batched EnvStates of shape (num_episodes, max_length, ...)
+            params: Environment parameters
+            plotting_kwargs: Additional keyword arguments for the plotting function
+        """
+        zone_positions = trajs.zone_centers[:, 0].tolist()
+        zone_colors = trajs.zone_colors[:, 0].tolist()
+        zone_colors = [[self.propositions[i] for i in cs] for cs in zone_colors]
+        paths = [
+            trajs.position[i, : lengths[i]].tolist() for i in range(lengths.shape[0])
+        ]
+        draw_trajectories(zone_positions, zone_colors, paths, **plotting_kwargs)

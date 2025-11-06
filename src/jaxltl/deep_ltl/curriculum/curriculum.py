@@ -6,7 +6,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl.deep_ltl.curriculum.sequence_sampler import (
-    ReachAvoidSequence,
+    JaxReachAvoidSequence,
     SequenceSampler,
 )
 
@@ -20,7 +20,7 @@ class CurriculumStage(eqx.Module):
         self.threshold = threshold
 
     @abstractmethod
-    def sample(self, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, key: jax.Array) -> JaxReachAvoidSequence:
         pass
 
 
@@ -33,7 +33,7 @@ class RandomCurriculumStage(CurriculumStage):
         super().__init__(threshold)
         self.sampler = sampler
 
-    def sample(self, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, key: jax.Array) -> JaxReachAvoidSequence:
         return self.sampler.sample(key)
 
 
@@ -55,7 +55,7 @@ class MultiRandomStage(CurriculumStage):
             jnp.array(probs, dtype=jnp.float32)
         )
 
-    def sample(self, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, key: jax.Array) -> JaxReachAvoidSequence:
         key, stage_keys = jax.random.split(key)
         stage_keys = jax.random.split(stage_keys, len(self.stages))
         samples = [
@@ -75,7 +75,7 @@ class Curriculum(eqx.Module):
         self.stages = tuple(stages)
 
     @eqx.filter_jit
-    def sample(self, stage: jax.Array, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, stage: jax.Array, key: jax.Array) -> JaxReachAvoidSequence:
         branches = [lambda k, s=stage: s.sample(k) for stage in self.stages]
         return jax.lax.switch(stage, branches, key)
 
@@ -90,7 +90,7 @@ class PrecomputedCurriculum(Curriculum):
     training, since this avoid sampling a new sequence at each step (due to JIT).
     However, it uses moderately more memory."""
 
-    samples: list[ReachAvoidSequence]  # batched samples for each stage
+    samples: list[JaxReachAvoidSequence]  # batched samples for each stage
     num_samples: int
 
     def __init__(self, stages: list[CurriculumStage], key: jax.Array, num_samples: int):
@@ -105,7 +105,7 @@ class PrecomputedCurriculum(Curriculum):
 
     @override
     @eqx.filter_jit
-    def sample(self, stage: jax.Array, key: jax.Array) -> ReachAvoidSequence:
+    def sample(self, stage: jax.Array, key: jax.Array) -> JaxReachAvoidSequence:
         index = jax.random.randint(key, (), 0, self.num_samples)
         return jax.lax.switch(
             stage,

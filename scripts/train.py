@@ -4,8 +4,10 @@ Uses Hydra for configuration management. See conf/train.yaml, or run
 `python train.py --help` for details.
 """
 
+import datetime
 import logging
 import time
+from pathlib import Path
 
 import equinox as eqx
 import hydra
@@ -23,7 +25,6 @@ from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
 from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
-from jaxltl.eqx_utils.training import ensemble_to_list
 from jaxltl.hydra_utils.utils import resolve_default_options
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
@@ -63,30 +64,27 @@ def main(cfg: DictConfig):
         cfg.model,
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
-        env.assignments.shape[0],
+        len(env.assignments),
         model_keys,
     )
-
-    start_time = time.time()
-
-    def callback(metric, seed, step):
-        seconds = time.time() - start_time
-        metric["total_step"] = metric["total_step"] * cfg.rl_alg.num_envs
-        last_return = metric["episode_return"][metric["done"]][-1]
-        last_step = metric["total_step"][metric["done"]][-1]
-        logger.info(
-            f"Seed {seed}. Step {step}. SPS: {step / seconds:.2f}. Return: {last_return}. Last Step: {last_step}"
-        )
 
     rl_alg: RLAlgorithm = hydra.utils.instantiate(cfg.rl_alg)
     train = eqx.filter_vmap(
         rl_alg.train, in_axes=(eqx.if_array(0), None, None, 0, None, None, 0)
     )
     train = eqx.filter_jit(train)
+    logger.info("Compiling training function...")
+    start_time = time.time()
+    cb = make_callback(cfg)
+    compiled = train.lower(
+        models, env, env_params, keys, cb, cfg.save_freq, seeds
+    ).compile()
+    logger.info(f"Compilation completed in {time.time() - start_time:.2f} seconds")
 
     logger.info("Starting training")
+    cb = make_callback(cfg)
     models, metrics = jax.block_until_ready(
-        train(models, env, env_params, keys, callback, 1_000_000, seeds)
+        compiled(models, env, env_params, keys, cb, cfg.save_freq, seeds)
     )
     end_time = time.time()
     logger.info(f"Training completed in {end_time - start_time:.2f} seconds")
@@ -113,9 +111,45 @@ def main(cfg: DictConfig):
     df = pd.concat(dfs, ignore_index=True)
     df.to_csv("logs.csv", index=False)
 
-    model = ensemble_to_list(models, cfg.num_seeds)[0]
-    eqx_utils.save("model.eqx", model)
-    logger.info("Model saved to model.eqx")
+    eqx_utils.save("models.eqx", models, metadata={"num_models": cfg.num_seeds})
+    logger.info("Models saved to models.eqx")
+
+
+def make_callback(cfg: DictConfig):
+    """Create a callback function to log progress and save model checkpoints."""
+
+    start_time = time.time()
+
+    def callback(
+        metric: dict[str, jax.Array],
+        model_params: jax.Array,
+        seed: jax.Array,
+        step: jax.Array,
+    ):
+        # estimate remaining training time
+        seconds = time.time() - start_time
+        sps = step / seconds
+        remaining = int((cfg.rl_alg.total_timesteps - step) / sps)
+        remaining = str(datetime.timedelta(seconds=remaining))
+
+        # average returns
+        window_returns = metric["episode_return"][metric["done"]][
+            -cfg.curriculum_wrapper.episode_window :
+        ]
+        avg_returns = jnp.mean(window_returns)
+
+        # log progress
+        logger.info(
+            f"seed {seed} | step {step} | ret {avg_returns:.2f} | sps {int(sps)} | eta {remaining}"
+        )
+
+        # save checkpoint
+        folder = Path("checkpoints")
+        folder.mkdir(parents=True, exist_ok=True)
+        filename = folder / f"model_seed{seed}_step{step}.eqx"
+        eqx_utils.save(filename, model_params)
+
+    return callback
 
 
 def build_model(

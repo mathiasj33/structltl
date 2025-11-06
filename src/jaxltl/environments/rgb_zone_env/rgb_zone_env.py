@@ -29,7 +29,6 @@ _MAX_SAMPLING_ITERS = 1000
 @dataclass(frozen=True)
 class EnvParams(environment.EnvParams):
     # World
-    agent_radius: float
     world_size: float
     spawn_size: float
     # Zones
@@ -96,7 +95,6 @@ class RGBZoneEnv(
 ):
     default_params = EnvParams(
         max_steps_in_episode=1000,
-        agent_radius=0.1,
         world_size=6.6,
         spawn_size=5.0,
         zone_radius=0.4,
@@ -331,7 +329,7 @@ class RGBZoneEnv(
         angular_velocity = target_angular_velocity
 
         reward = jnp.zeros((), dtype=jnp.float32)
-        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
+        half_size = params.world_size / 2.0
         terminated = jnp.any(jnp.abs(position) > half_size)
 
         next_state = EnvState(
@@ -514,7 +512,7 @@ class RGBZoneEnv(
         idxs = state.zone_idxs  # (N,)
 
         dists = jnp.linalg.norm(centers - pos, axis=1)  # (N,)
-        inside = dists < params.zone_radius + params.agent_radius  # (N,)
+        inside = dists < params.zone_radius  # (N,)
 
         def compute_color_prop(color_id: jax.Array) -> jax.Array:
             mask_color = idxs == color_id  # (N,)
@@ -527,7 +525,7 @@ class RGBZoneEnv(
 
     @property
     @override
-    def assignments(self) -> jax.Array:
+    def assignments_array(self) -> jax.Array:
         """Returns the possible assignments in the environment.
 
         Returns: array of shape (num_assignments, I) int32

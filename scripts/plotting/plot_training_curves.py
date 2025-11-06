@@ -1,20 +1,12 @@
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
+from jaxltl.utils.plot_utils import smooth
+
 sns.set_theme(style="darkgrid")
-
-
-def smooth(row, radius):
-    """
-    Computes the moving average over the given row of data. Returns an array of the same shape as the original row.
-    """
-    y = np.ones(radius)
-    z = np.ones(len(row))
-    return np.convolve(row, y, "same") / np.convolve(z, y, "same")
 
 
 def load_df(path: str | Path) -> pd.DataFrame:
@@ -46,7 +38,8 @@ def load_df(path: str | Path) -> pd.DataFrame:
 dfs = [
     load_df(p)
     for p in [
-        "runs/ZoneEnv/tmp/logs.csv",
+        "runs/ZoneEnv/fix/logs.csv",
+        "runs/ZoneEnv/default/logs.csv",
         # "runs/RGBZoneEnv/tmp/logs.csv",
     ]
 ]
