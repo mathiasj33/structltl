@@ -212,6 +212,7 @@ class Environment[
             jax.Array of shape () int32: index in assignments array
         """
         # (num_assignments,)
+        assignment = jnp.sort(assignment, descending=True)
         matches = jnp.all(self.assignments_array == assignment, axis=1)
         return jnp.argmax(matches)  # () int32
 

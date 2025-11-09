@@ -138,9 +138,16 @@ def make_callback(cfg: DictConfig):
         ]
         avg_returns = jnp.mean(window_returns)
 
+        window_stages = metric["curriculum_stage"][metric["done"]][
+            -cfg.curriculum_wrapper.episode_window :
+        ]
+        avg_stage = jnp.mean(window_stages)
+        min_stage = jnp.min(window_stages)
+        max_stage = jnp.max(window_stages)
+
         # log progress
         logger.info(
-            f"seed {seed} | step {step} | ret {avg_returns:.2f} | sps {int(sps)} | eta {remaining}"
+            f"seed {seed} | step {step} | ret {avg_returns:.2f} | stage {avg_stage:.2f} ({min_stage:}, {max_stage:}) | sps {int(sps)} | eta {remaining}"
         )
 
         # save checkpoint

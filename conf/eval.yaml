@@ -1,21 +1,15 @@
 defaults:
   - experiment: deep_ltl/zones
+  - formulas: zones/custom
   - hydra: simple
   - _self_
 
-run: default
+run: deepltl
 env:
   use_precomputed_resets: true # setting to true ignores default options
   precomputed_resets_path: sampled_resets_test.eqx
-formulas:
-  - "F (green & (!red U yellow)) & F purple"
-  - "(F red) & (!red U (green & F yellow))"
-  - "F (red | green) & F yellow & F purple"
-  - "!(purple | yellow) U (red & F green)"
-  - "!green U ((red | purple) & (!green U yellow))"
-  - "((green | red) => (!yellow U purple)) U yellow"
 eval:
-  num_episodes: 1024
+  num_episodes: 512
   deterministic: false
   discount: 0.998
 plotting:

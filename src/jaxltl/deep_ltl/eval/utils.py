@@ -90,10 +90,10 @@ def _batch_ldbas(ldbas: list[JaxLDBA]) -> JaxLDBA:
     num_states = jnp.array([ldba.num_states for ldba in ldbas], dtype=jnp.int32)
     max_num_states = jnp.max(num_states)
     batch_size = len(ldbas)
-    num_assignments = ldbas[0].transitions.shape[1]
+    num_assignments = ldbas[0].transitions.shape[1] - 1
 
     transitions = -jnp.ones(
-        (batch_size, max_num_states, num_assignments), dtype=jnp.int32
+        (batch_size, max_num_states, num_assignments + 1), dtype=jnp.int32
     )
     accepting = jnp.zeros((batch_size, max_num_states, num_assignments), dtype=bool)
     initial_states = jnp.zeros((batch_size,), dtype=jnp.int32)
@@ -131,14 +131,17 @@ def _batch_sequences(
         # Calculate padding
         pad_axis0 = max(0, max_num_states - x.shape[0])
         pad_axis1 = max(0, max_num_seqs - x.shape[1])
-        pad_axis2 = max(0, max_length - x.shape[2])
 
         pad_config = (
             (0, pad_axis0),  # Axis 0 (states)
             (0, pad_axis1),  # Axis 1 (seqs)
-            (0, pad_axis2),  # Axis 2 (length)
-            (0, 0),  # Axis 3 (assignments) - no padding
         )
+
+        if x.ndim > 2:
+            pad_axis2 = max(0, max_length - x.shape[2])
+            pad_config += ((0, pad_axis2),)  # Axis 2 (length)
+
+        pad_config += ((0, 0),) * (x.ndim - len(pad_config))
 
         return jnp.pad(x, pad_width=pad_config, mode="constant", constant_values=-1)
 
@@ -187,15 +190,17 @@ def load_model_checkpoints(
         list of checkpoint steps.
     """
 
-    model = hydra.utils.instantiate(
+    make_model = lambda key: hydra.utils.instantiate(
         cfg.model,
         obs_dim=env.observation_space(env_params).shape[0],
         action_dim=env.action_space(env_params).shape[0],
         num_assignments=len(env.assignments),
         key=key,
     )
+    model = make_model(key)
     params, static = eqx.partition(model, eqx.is_array)
 
+    # load checkpoints
     step_to_models = defaultdict(dict)
     checkpoint_folder = Path(f"runs/{cfg.env.name}/{cfg.run}/checkpoints")
     for file in checkpoint_folder.iterdir():
@@ -207,6 +212,12 @@ def load_model_checkpoints(
     seeds_per_step = [set(seeds.keys()) for seeds in step_to_models.values()]
     if not all(seeds == seeds_per_step[0] for seeds in seeds_per_step):
         raise ValueError("Not all checkpoints have the same seeds.")
+
+    # load initial models
+    for seed in range(len(seeds_per_step[0])):
+        key, subkey = jax.random.split(key)
+        init_params, _ = eqx.partition(make_model(subkey), eqx.is_array)
+        step_to_models[0][seed] = init_params
 
     sorted_steps = sorted(step_to_models)
     models_list = []

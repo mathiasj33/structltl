@@ -18,6 +18,12 @@ class WrapperState(eqx.Module):
 
     state: eqx.Module  # the state of the wrapped environment / previous wrapper
 
+    def unwrapped(self) -> eqx.Module:
+        """Recursively unwraps the environment to get the base environment."""
+        if isinstance(self.state, WrapperState):
+            return self.state.unwrapped()
+        return self.state
+
     def __getattr__(self, name):
         return getattr(self.state, name)
 

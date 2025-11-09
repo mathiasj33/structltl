@@ -6,20 +6,24 @@ import jax.numpy as jnp
 
 @jax.jit
 def sample_assignments(
-    available_mask: jax.Array, reach_range: tuple[int, int], key: jax.Array
+    available_mask: jax.Array, bounds: tuple[int, int], key: jax.Array
 ) -> jax.Array:
     """
-    Samples between (min_reach, max_reach) assignments from the available ones.
+    Samples between (min, max) assignments from the available ones.
 
     Args:
         available_mask: A boolean array of shape (num_assignments,) indicating which
             assignments are available for sampling.
-        reach_range: A tuple (min_reach, max_reach) specifying the range for
+        bounds: A tuple (min, max) specifying the range for
             the number of assignments to sample.
         key: A JAX random key.
+
+    Returns:
+        A boolean array of shape (num_assignments,) indicating which assignments were
+        sampled.
     """
     nr_key, reach_key = jax.random.split(key)
-    nr = jax.random.randint(nr_key, (), reach_range[0], reach_range[1] + 1)
+    nr = jax.random.randint(nr_key, (), bounds[0], bounds[1] + 1)
     num_assignments = available_mask.shape[0]
 
     shuffled_indices = jax.random.permutation(reach_key, num_assignments)

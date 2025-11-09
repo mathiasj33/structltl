@@ -4,8 +4,8 @@ defaults:
   - _self_
 
 run: tmp
-num_seeds: 1
+num_seeds: 5
 use_gpu: true # use gpu if available
 rl_alg:
-  total_timesteps: 15e6
+  total_timesteps: 20e6
 save_freq: 2e5

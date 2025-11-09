@@ -5,14 +5,16 @@ import jax
 import jax.numpy as jnp
 from jaxtyping import PyTree
 
+from jaxltl import eqx_utils
 from jaxltl.deep_ltl.curriculum.curriculum import JaxReachAvoidSequence
 from jaxltl.deep_ltl.wrappers.curriculum_wrapper import SequenceObservation
 from jaxltl.environments.environment import (
     EnvObservation,
     EnvParams,
+    EnvTransition,
 )
 from jaxltl.environments.wrappers.vectorize_wrapper import VectorizeWrapper
-from jaxltl.environments.wrappers.wrapper import WrapperState
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 from jaxltl.ltl.automata.jax_ldba import JaxLDBA
 from jaxltl.rl.actor_critic import ActorCritic
 
@@ -65,28 +67,43 @@ class Evaluator(eqx.Module):
         """
 
         def rollout_cond(
-            carry: tuple[WrapperState, PyTree, EvalState, PyTree, jax.Array, jax.Array],
+            carry: tuple[
+                WrapperState, PyTree, jax.Array, EvalState, PyTree, jax.Array, jax.Array
+            ],
         ) -> jax.Array:
-            env_state, obsv, eval_state, trajs, index, key = carry
+            env_state, obsv, props, eval_state, trajs, index, key = carry
             return jnp.sum(eval_state.completed).astype(jnp.int32) < self.num_episodes
 
         def rollout_step(
-            carry: tuple[WrapperState, PyTree, EvalState, PyTree, jax.Array, jax.Array],
-        ) -> tuple[WrapperState, PyTree, EvalState, PyTree, jax.Array, jax.Array]:
-            env_state, obsv, eval_state, trajs, index, key = carry
+            carry: tuple[
+                WrapperState, PyTree, jax.Array, EvalState, PyTree, jax.Array, jax.Array
+            ],
+        ) -> tuple[
+            WrapperState, PyTree, jax.Array, EvalState, PyTree, jax.Array, jax.Array
+        ]:
+            env_state, obsv, props, eval_state, trajs, index, key = carry
             # select action
-            seq_obsv = SequenceObservation.from_obs(obsv, eval_state.seq)
+            assignment_index = jax.vmap(env.map_assignment_to_index)(props)
+            eps_enabled = jax.vmap(self._is_epsilon_enabled, in_axes=(None, 0, 0))(
+                env, eval_state.seq, assignment_index
+            )
+            seq_obsv = SequenceObservation.from_obs(obsv, eval_state.seq, eps_enabled)
             pi = model.get_action(seq_obsv)
             if deterministic:
                 action = pi.mode()
             else:
                 key, sample_key = jax.random.split(key)
                 action = pi.sample(seed=sample_key)
+            env_action, epsilon_action = action
 
             # step env
             key, step_key = jax.random.split(key)
             step_key = jax.random.split(step_key, self.num_episodes)
-            transition = env.step(step_key, env_state, action, env_params)
+            env_transition = env.step(step_key, env_state, env_action, env_params)
+            eps_transition = self._epsilon_step(env_state, obsv, props)
+            transition = eqx_utils.pytree_where(
+                epsilon_action.astype(jnp.bool), eps_transition, env_transition
+            )
 
             # record trajectory
             trajs = jax.tree.map(
@@ -101,17 +118,25 @@ class Evaluator(eqx.Module):
             next_ldba_state, is_accepting = jax.vmap(ldba.get_next_state)(
                 eval_state.ldba_state, assignments
             )
+            next_eps_state = jax.vmap(ldba.get_next_epsilon_state)(
+                eval_state.ldba_state
+            )
+            next_ldba_state = jnp.where(
+                epsilon_action.astype(jnp.bool), next_eps_state, next_ldba_state
+            )
+            is_accepting = jnp.where(  # epsilon transitions cannot be accepting
+                epsilon_action.astype(jnp.bool), False, is_accepting
+            )
 
             # choose new sequences based on updated LDBA state
             needs_update = next_ldba_state != eval_state.ldba_state
             new_seqs = self._choose_sequences(
-                model, next_ldba_state, batched_seqs, transition.observation
+                model,
+                next_ldba_state,
+                batched_seqs,
+                transition.observation,
             )
-            seq = jax.tree.map(
-                lambda old, new: jnp.where(needs_update[:, None, None], new, old),
-                eval_state.seq,
-                new_seqs,
-            )
+            seq = eqx_utils.pytree_where(needs_update, new_seqs, eval_state.seq)
 
             # update metrics
             rewards = is_accepting.astype(jnp.int32)
@@ -137,6 +162,7 @@ class Evaluator(eqx.Module):
             return (
                 transition.state,
                 transition.observation,
+                transition.propositions,
                 new_eval_state,
                 trajs,
                 index + 1,
@@ -146,6 +172,9 @@ class Evaluator(eqx.Module):
         key, reset_key = jax.random.split(key)
         reset_keys = jax.random.split(reset_key, self.num_episodes)
         env_state, obsv = env.reset(reset_keys, None, env_params, None)
+        props: jax.Array = eqx.filter_vmap(env.compute_propositions)(
+            env_state, env_params
+        )
         max_length = env_params.max_steps_in_episode
         trajs = jax.tree.map(
             lambda x: jnp.zeros(
@@ -166,10 +195,30 @@ class Evaluator(eqx.Module):
             completed=jnp.zeros((self.num_episodes,), dtype=bool),
         )
         final = jax.lax.while_loop(
-            rollout_cond, rollout_step, (env_state, obsv, state, trajs, index, key)
+            rollout_cond,
+            rollout_step,
+            (env_state, obsv, props, state, trajs, index, key),
         )
-        _, _, state, trajs, _, _ = final
+        _, _, _, state, trajs, _, _ = final
         return state.metric, state.returns, state.lengths, trajs
+
+    def _epsilon_step(
+        self,
+        env_state: WrapperState,
+        obsv: EnvObservation,
+        propositions: jax.Array,
+    ) -> EnvTransition:
+        """Do-nothing transition corresponding to an epsilon action."""
+        return EnvTransition(
+            state=env_state,
+            observation=obsv,
+            reward=jnp.zeros(()),
+            terminated=jnp.zeros((), dtype=jnp.bool),
+            truncated=jnp.zeros((), dtype=jnp.bool),
+            terminal_observation=obsv,
+            propositions=propositions,
+            info={},
+        )
 
     @eqx.filter_jit
     def _choose_sequences(
@@ -190,12 +239,18 @@ class Evaluator(eqx.Module):
             state_seqs = JaxReachAvoidSequence(
                 reach=batched_seqs.reach[ldba_state],
                 avoid=batched_seqs.avoid[ldba_state],
+                repeat_last=batched_seqs.repeat_last[ldba_state],
+                last_index=batched_seqs.last_index[ldba_state],
             )
             num_seqs = state_seqs.reach.shape[0]
             batched_obs = jax.tree.map(
                 lambda x: jnp.broadcast_to(x[None, ...], (num_seqs,) + x.shape), obs
             )
-            batched_seq_obs = SequenceObservation.from_obs(batched_obs, state_seqs)
+            batched_seq_obs = SequenceObservation.from_obs(
+                batched_obs,
+                state_seqs,
+                epsilon_enabled=jnp.ones((num_seqs,), dtype=bool),
+            )  # epsilon_enabled is irrelevant for the critic
             scores = model.get_value(batched_seq_obs)  # (num_seqs,)
             padded = state_seqs.reach[:, 0, 0] == -1
             scores = jnp.where(padded, -jnp.inf, scores)
@@ -204,3 +259,16 @@ class Evaluator(eqx.Module):
 
         batched_choose_sequence = jax.vmap(choose_sequence_for_env, in_axes=(0, 0))
         return batched_choose_sequence(ldba_state, obsv)
+
+    def _is_epsilon_enabled(
+        self, env: EnvWrapper, seq: JaxReachAvoidSequence, assignment_index: jax.Array
+    ) -> jax.Array:
+        """Returns a boolean indicating if an epsilon action can be taken. This is only
+        true if the current step in the reach-avoid sequence is an epsilon transition,
+        and the current environment assignment does not violate the next avoid set.
+        """
+        is_epsilon = seq.reach[0, 0] == len(env._env.assignments)
+        is_valid = jnp.logical_or(
+            seq.depth <= 1, jnp.all(seq.avoid[1] != assignment_index)
+        )
+        return jnp.logical_and(is_epsilon, is_valid)

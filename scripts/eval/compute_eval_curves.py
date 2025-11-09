@@ -25,7 +25,7 @@ from jaxltl.deep_ltl.eval.utils import (
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base="1.1", config_path="../conf", config_name="eval_curves")
+@hydra.main(version_base="1.1", config_path="../../conf", config_name="eval_curves")
 def main(cfg: DictConfig):
     # build environment
     env, env_params = build_env(cfg, None)

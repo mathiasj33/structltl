@@ -15,17 +15,49 @@ from jaxltl.environments.wrappers.wrapper import EnvWrapper
 class JaxReachAvoidSequence(NamedTuple):
     """Jax representation of a reach-avoid sequence consisting of sets of assignments to reach and avoid."""
 
-    # TODO: +1 for epsilon
-    # Each row consists of assignment indices with -1 padding
+    # Each row consists of assignment indices with -1 padding. Epsilon transitions are
+    # represented by an index of len(env.assignments) in the reach set.
     reach: jax.Array  # shape: (max_length, num_assignments)
     avoid: jax.Array  # shape: (max_length, num_assignments)
+    # Indicates how often the last reach-avoid pair should be repeated. This is used to
+    # specify long sequences (such as FG a) without increasing the size of the arrays.
+    repeat_last: jax.Array = jnp.ones((), dtype=jnp.int32)
+    # counts how often advanced in last step
+    last_index: jax.Array = jnp.zeros((), dtype=jnp.int32)
 
     def advance(self) -> "JaxReachAvoidSequence":
         """Advance the reach-avoid sequence by one step. Returns a new sequence, with
         the last step padded.
         """
-        seq = jax.tree.map(lambda x: jnp.roll(x, -1, axis=0), self)
-        seq = jax.tree.map(lambda x: x.at[-1, :].set(-1), seq)
+        is_last_step = self.depth == 1
+        should_repeat = jnp.logical_and(
+            is_last_step, self.last_index + 1 < self.repeat_last
+        )
+
+        def _repeat_step():
+            return self._replace(last_index=self.last_index + 1)
+
+        def _advance_step():
+            # advance arrays one step
+            new_reach = jnp.roll(self.reach, -1, axis=0)
+            new_avoid = jnp.roll(self.avoid, -1, axis=0)
+
+            # pad the last row with -1s
+            new_reach = new_reach.at[-1, :].set(-1)
+            new_avoid = new_avoid.at[-1, :].set(-1)
+
+            return JaxReachAvoidSequence(
+                reach=new_reach,
+                avoid=new_avoid,
+                repeat_last=self.repeat_last,
+                last_index=jnp.zeros((), dtype=jnp.int32),
+            )
+
+        seq = jax.lax.cond(
+            should_repeat,
+            _repeat_step,
+            _advance_step,
+        )
         return seq
 
     @property
@@ -65,9 +97,17 @@ class JaxReachAvoidSequence(NamedTuple):
             for seq_idx, seq in enumerate(seqs):
                 for i, (r, a) in enumerate(seq.reach_avoid):
                     if isinstance(r, EpsilonType):
-                        continue  # TODO
-                    for j, assignment in enumerate(r):
-                        reach[state, seq_idx, i, j] = env.assignments.index(assignment)
+                        reach[state, seq_idx, i, 0] = len(env.assignments)
+                    else:
+                        for j, assignment in enumerate(r):
+                            reach[state, seq_idx, i, j] = env.assignments.index(
+                                assignment
+                            )
                     for j, assignment in enumerate(a):
                         avoid[state, seq_idx, i, j] = env.assignments.index(assignment)
-        return cls(reach=jnp.array(reach), avoid=jnp.array(avoid))
+        return cls(
+            reach=jnp.array(reach),
+            avoid=jnp.array(avoid),
+            repeat_last=jnp.ones((num_states, max_seqs), dtype=jnp.int32),
+            last_index=jnp.zeros((num_states, max_seqs), dtype=jnp.int32),
+        )

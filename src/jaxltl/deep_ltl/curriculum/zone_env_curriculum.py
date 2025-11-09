@@ -1,15 +1,16 @@
 import jax
 
 from jaxltl.deep_ltl.curriculum.curriculum import (
+    MultiRandomStage,
     PrecomputedCurriculum,
     RandomCurriculumStage,
 )
-from jaxltl.deep_ltl.curriculum.zone_env_samplers import ZoneReachAvoidSampler
-
-# TODO: fix the below
-_num_assignments = (
-    4  # NOTE: we assume that the empty assignment is the last one (with index 5)
+from jaxltl.deep_ltl.curriculum.zone_env_samplers import (
+    ZoneReachAvoidSampler,
+    ZoneReachStaySampler,
 )
+
+_num_assignments = 5
 _max_length = 3
 
 make = lambda: PrecomputedCurriculum(
@@ -23,7 +24,7 @@ make = lambda: PrecomputedCurriculum(
                 num_assignments=_num_assignments,
                 max_length=_max_length,
             ),
-            threshold=0.8,
+            threshold=0.9,
         ),
         # 2. Reach tasks of depth 2
         RandomCurriculumStage(
@@ -58,15 +59,82 @@ make = lambda: PrecomputedCurriculum(
             ),
             threshold=0.9,
         ),
-        # 5. Mixed tasks
-        RandomCurriculumStage(
-            sampler=ZoneReachAvoidSampler(
-                depth=(1, 2),
-                reach=(1, 2),
-                avoid=(0, 2),
-                num_assignments=_num_assignments,
-                max_length=_max_length,
-            ),
+        # 5. Reach-avoid / reach-stay tasks
+        MultiRandomStage(
+            stages=[
+                RandomCurriculumStage(
+                    sampler=ZoneReachAvoidSampler(
+                        depth=(1, 2),
+                        reach=(1, 2),
+                        avoid=(0, 2),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+                RandomCurriculumStage(
+                    sampler=ZoneReachStaySampler(
+                        num_stay=30,
+                        avoid=(0, 1),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+            ],
+            probs=[0.4, 0.6],
+            threshold=0.9,
+        ),
+        # 6. More complex reach-avoid / reach-stay tasks
+        MultiRandomStage(
+            stages=[
+                RandomCurriculumStage(
+                    sampler=ZoneReachAvoidSampler(
+                        depth=(1, 2),
+                        reach=(1, 2),
+                        avoid=(0, 2),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+                RandomCurriculumStage(
+                    sampler=ZoneReachStaySampler(
+                        num_stay=60,
+                        avoid=(0, 1),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+            ],
+            probs=[0.8, 0.2],
+            threshold=0.9,
+        ),
+        # 7. Final mixture of complex tasks
+        MultiRandomStage(
+            stages=[
+                RandomCurriculumStage(
+                    sampler=ZoneReachAvoidSampler(
+                        depth=(1, 2),
+                        reach=(1, 2),
+                        avoid=(0, 2),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+                RandomCurriculumStage(
+                    sampler=ZoneReachStaySampler(
+                        num_stay=60,
+                        avoid=(0, 2),
+                        num_assignments=_num_assignments,
+                        max_length=_max_length,
+                    ),
+                    threshold=None,
+                ),
+            ],
+            probs=[0.8, 0.2],
             threshold=None,
         ),
     ],

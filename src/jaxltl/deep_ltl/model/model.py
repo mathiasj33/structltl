@@ -40,7 +40,7 @@ class DeepLTLModel(ActorCritic):
         key, emb_key = jax.random.split(key)
         embedding_dim = config.sequence.embedding_dim
         self.embedding = nn.Embedding(
-            num_embeddings=num_assignments,
+            num_embeddings=num_assignments + 1,  # +1 for epsilon transitions
             embedding_size=embedding_dim,
             key=emb_key,
         )
@@ -71,8 +71,10 @@ class DeepLTLModel(ActorCritic):
         )
 
     @override
-    def _get_action(self, features: jax.Array) -> distrax.Distribution:
-        return self.actor(features)
+    def _get_action(
+        self, features: jax.Array, epsilon_mask: jax.Array
+    ) -> distrax.Distribution:
+        return self.actor(features, epsilon_mask)
 
     @override
     def _get_value(self, features: jax.Array) -> jax.Array:

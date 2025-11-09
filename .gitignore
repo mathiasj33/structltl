@@ -1,3 +1,4 @@
+# Project-specific ignores
 local/
 outputs/
 runs/
@@ -5,8 +6,9 @@ runs/
 data/
 dependencies/
 ldba.png
+.VSCodeCounter/
 
-# pixi environments
+# Pixi environments
 .pixi
 *.egg-info
 

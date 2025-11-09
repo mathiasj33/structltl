@@ -6,7 +6,7 @@ import numpy as np
 import numpy.testing as npt
 
 from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
-from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import ReachAvoidSequence
+from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON, ReachAvoidSequence
 from jaxltl.environments.environment import Environment
 from jaxltl.ltl.logic.assignment import Assignment
 
@@ -65,6 +65,11 @@ def test_from_state_to_seq():
             (make_set({"green"}, {"red"}), frozenset()),
             (make_set({"purple"}), make_set({"green"}, {"yellow"})),
             (make_set({"yellow", "red"}, {"red"}), make_set({"yellow"})),
+            (EPSILON, make_set({"yellow"})),
+            (
+                make_set({"green"}),
+                make_set({"red"}, {"purple"}, {"yellow"}, {"red", "yellow"}, set()),
+            ),
         ]
     )
     state_to_seq = {0: [ras]}
@@ -73,12 +78,24 @@ def test_from_state_to_seq():
     jax_ras = jax.tree.map(lambda x: x[0, 0], jax_ras)
 
     expected_reach = jnp.array(
-        [[1, 0, -1, -1, -1, -1], [2, -1, -1, -1, -1, -1], [4, 0, -1, -1, -1, -1]],
+        [
+            [1, 0, -1, -1, -1, -1],
+            [2, -1, -1, -1, -1, -1],
+            [4, 0, -1, -1, -1, -1],
+            [6, -1, -1, -1, -1, -1],
+            [1, -1, -1, -1, -1, -1],
+        ],
         dtype=jnp.int32,
     )
 
     expected_avoid = jnp.array(
-        [[-1, -1, -1, -1, -1, -1], [1, 3, -1, -1, -1, -1], [3, -1, -1, -1, -1, -1]],
+        [
+            [-1, -1, -1, -1, -1, -1],
+            [1, 3, -1, -1, -1, -1],
+            [3, -1, -1, -1, -1, -1],
+            [3, -1, -1, -1, -1, -1],
+            [0, 2, 3, 4, 5, -1],
+        ],
         dtype=jnp.int32,
     )
 
@@ -116,9 +133,9 @@ def assert_ragged_set_equal(actual, expected, pad_val=-1):
         actual_valid = actual_np[i][actual_mask[i]]
         expected_valid = expected_np[i][expected_mask[i]]
 
-    # Sort the valid elements to make the comparison order-invariant
-    npt.assert_array_equal(
-        np.sort(actual_valid),
-        np.sort(expected_valid),
-        f"Row {i} non-padded elements do not match (order-invariant).",
-    )
+        # Sort the valid elements to make the comparison order-invariant
+        npt.assert_array_equal(
+            np.sort(actual_valid),
+            np.sort(expected_valid),
+            f"Row {i} non-padded elements do not match (order-invariant): {actual_np[i]} vs {expected_np[i]}",
+        )

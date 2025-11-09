@@ -38,8 +38,11 @@ def load_df(path: str | Path) -> pd.DataFrame:
 dfs = [
     load_df(p)
     for p in [
-        "runs/ZoneEnv/fix/logs.csv",
-        "runs/ZoneEnv/default/logs.csv",
+        # "runs/ZoneEnv/fix/logs.csv",
+        # "runs/ZoneEnv/default/logs.csv",
+        # "runs/ZoneEnv/tmp/logs.csv",
+        "runs/ZoneEnv/full/logs.csv",
+        "runs/ZoneEnv/full2/logs.csv",
         # "runs/RGBZoneEnv/tmp/logs.csv",
     ]
 ]

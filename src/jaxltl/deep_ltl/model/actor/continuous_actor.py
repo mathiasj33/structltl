@@ -6,6 +6,7 @@ import jax
 import jax.numpy as jnp
 from jax.nn.initializers import Initializer
 
+from jaxltl.deep_ltl.model.epsilon_distribution import EpsilonDistribution
 from jaxltl.networks.mlp import MLP
 
 
@@ -14,6 +15,7 @@ class ContinuousActor(eqx.Module):
     action_mean: MLP
     action_std: MLP | None
     log_std: jax.Array | None
+    epsilon_prob: MLP
 
     def __init__(
         self,
@@ -28,7 +30,7 @@ class ContinuousActor(eqx.Module):
         *,
         key: jax.Array,
     ):
-        enc_key, mean_key, std_key = jax.random.split(key, 3)
+        enc_key, mean_key, std_key, eps_key = jax.random.split(key, 4)
         self.encoder = MLP(
             in_size,
             hidden_sizes[-1],
@@ -64,13 +66,24 @@ class ContinuousActor(eqx.Module):
         else:
             self.log_std = jnp.zeros((action_dim,))
             self.action_std = None
+        self.epsilon_prob = MLP(
+            hidden_sizes[-1],
+            1,
+            [],
+            weight_init=weight_init,
+            bias_init=bias_init,
+            final_layer_activation=False,
+            key=eps_key,
+        )
 
-    def __call__(self, x: jax.Array) -> distrax.Distribution:
+    def __call__(
+        self, features: jax.Array, epsilon_mask: jax.Array
+    ) -> distrax.Distribution:
         """Input shape: (batch_size, in_size).
 
         Input has to be batched because distrax distributions are not compatible with vmap.
         """
-        encoded = jax.vmap(self.encoder)(x)
+        encoded = jax.vmap(self.encoder)(features)
         mean = jax.vmap(self.action_mean)(encoded)
         if self.action_std is not None:
             std = jax.vmap(self.action_std)(encoded)
@@ -79,4 +92,6 @@ class ContinuousActor(eqx.Module):
         else:
             std = jnp.exp(self.log_std)[None, :].reshape(mean.shape)  # type: ignore
         std += 1e-3  # numerical stability
-        return distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
+        log_eps = jax.vmap(self.epsilon_prob)(encoded)
+        action_dist = distrax.MultivariateNormalDiag(loc=mean, scale_diag=std)
+        return EpsilonDistribution(action_dist, log_eps.squeeze(-1), epsilon_mask)

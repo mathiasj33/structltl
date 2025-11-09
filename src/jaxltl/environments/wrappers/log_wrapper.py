@@ -72,7 +72,7 @@ class LogWrapper[
         ret = transition.reward + state.ret
         length = state.step + 1
         total_step = state.total_step + 1
-        stage = transition.state.curriculum_stage
+        stage = transition.state.curriculum_stage + 1
         log_state = LogEnvState(
             step=(state.step + 1) * (1 - transition.done),
             state=transition.state,

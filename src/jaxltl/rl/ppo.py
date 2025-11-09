@@ -40,6 +40,20 @@ class PPOConfig(NamedTuple):
     adam_eps: float
 
 
+class PPOTransition(NamedTuple):
+    """PPO-relevant transition information."""
+
+    terminated: jax.Array
+    truncated: jax.Array
+    action: jax.Array
+    value: jax.Array
+    reward: jax.Array
+    log_prob: jax.Array
+    obs: PyTree
+    terminal_obs: PyTree
+    info: PyTree
+
+
 class PPO(RLAlgorithm):
     """Proximal Policy Optimization (PPO) algorithm."""
 
@@ -216,7 +230,7 @@ class PPO(RLAlgorithm):
         env_params: PyTree,
         *,
         key: jax.Array,
-    ) -> tuple[PyTree, PyTree, PyTree]:
+    ) -> tuple[PPOTransition, PyTree, PyTree]:
         """Collect a batch of trajectories using the current policy.
 
         Returns:
@@ -255,7 +269,7 @@ class PPO(RLAlgorithm):
         return trajs, carry[1], carry[0]
 
     def _calculate_gae(
-        self, trajs: PyTree, last_obs: PyTree, model: ActorCritic
+        self, trajs: PPOTransition, last_obs: PyTree, model: ActorCritic
     ) -> tuple[jax.Array, jax.Array]:
         """Calculate Generalized Advantage Estimation (GAE) and target values.
 
@@ -298,7 +312,7 @@ class PPO(RLAlgorithm):
 
     def _get_minibatches(
         self,
-        trajs: PyTree,
+        trajs: PPOTransition,
         advantages: jax.Array,
         targets: jax.Array,
         key: jax.Array,
@@ -323,7 +337,11 @@ class PPO(RLAlgorithm):
         return minibatches
 
     def _loss_fn(
-        self, model: ActorCritic, trajs: PyTree, gae: jax.Array, targets: jax.Array
+        self,
+        model: ActorCritic,
+        trajs: PPOTransition,
+        gae: jax.Array,
+        targets: jax.Array,
     ) -> tuple[jax.Array, tuple[jax.Array, jax.Array, jax.Array]]:
         """Calculate the PPO loss.
 
@@ -365,17 +383,3 @@ class PPO(RLAlgorithm):
             - self.config.ent_coef * entropy
         )
         return total_loss, (value_loss, loss_actor, entropy)
-
-
-class PPOTransition(NamedTuple):
-    """PPO-relevant transition information."""
-
-    terminated: jax.Array
-    truncated: jax.Array
-    action: jax.Array
-    value: jax.Array
-    reward: jax.Array
-    log_prob: jax.Array
-    obs: PyTree
-    terminal_obs: PyTree
-    info: PyTree

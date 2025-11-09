@@ -24,7 +24,7 @@ from jaxltl.deep_ltl.eval.utils import (
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(version_base="1.1", config_path="../conf", config_name="eval")
+@hydra.main(version_base="1.1", config_path="../../conf", config_name="eval")
 def main(cfg: DictConfig):
     if cfg.plotting.plot and len(cfg.formulas) > 1:
         cfg.plotting.plot = False
@@ -107,14 +107,16 @@ def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array
         success_mask = metrics_i > 0  # (num_seeds, num_episodes)
         success_counts = jnp.sum(success_mask, axis=1)  # (num_seeds,)
         sum_lengths = jnp.sum(lengths_i * success_mask, axis=1)
-        lengths = jnp.where(success_counts > 0, sum_lengths / success_counts, jnp.nan)
+        avg_lengths = jnp.where(
+            success_counts > 0, sum_lengths / success_counts, jnp.nan
+        )
 
         # Stdout logging (aggregate across seeds)
         logger.info("========================================")
         logger.info(f"Formula: {formula}")
         logger.info(f"SR/AV: {float(jnp.mean(means)):.3f}+-{float(jnp.std(means)):.3f}")
         logger.info(
-            f"Length: {float(jnp.mean(lengths)):.3f}+-{float(jnp.std(lengths)):.3f}"
+            f"Length: {float(jnp.mean(avg_lengths)):.3f}+-{float(jnp.std(avg_lengths)):.3f}"
         )
 
         # CSV rows (per-seed)
@@ -125,7 +127,7 @@ def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array
                     "deterministic": bool(cfg.eval.deterministic),
                     "formula": formula,
                     "metric": float(means[seed]),
-                    "length": float(lengths[seed]),
+                    "length": float(avg_lengths[seed]),
                 }
             )
 
