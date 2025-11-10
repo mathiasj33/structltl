@@ -10,10 +10,15 @@ import pygame
 from pygame import gfxdraw
 
 from jaxltl.environments.renderer.renderer import BaseRenderer
-from jaxltl.environments.zone_env.zone_env import EnvParams, EnvState, ObsFeatures
+from jaxltl.environments.zone_env.zone_env import (
+    EnvParams,
+    EnvState,
+    ObsFeatures,
+    ResetOptions,
+)
 
 
-class Renderer(BaseRenderer[EnvState, ObsFeatures]):
+class Renderer(BaseRenderer[ObsFeatures, ResetOptions]):
     def __init__(
         self,
         params: EnvParams,
@@ -31,7 +36,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures]):
         self._lidar_surface = pygame.Surface(self._screen.get_size(), pygame.SRCALPHA)
 
         self._world_to_screen_scale = screen_size / params.world_size
-        self._agent_radius_px = int(params.agent_radius * self._world_to_screen_scale)
+        self._agent_radius_px = int(0.1 * self._world_to_screen_scale)
         self._zone_radius_px = int(params.zone_radius * self._world_to_screen_scale)
 
         # Checkerboard background
@@ -86,6 +91,7 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures]):
         state: EnvState,
         previous_state: EnvState,
         obs: ObsFeatures,
+        propositions: jax.Array,
         alpha: float,
     ):
         """Render the environment state."""
@@ -106,6 +112,76 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures]):
             self._draw_lidar(interpolated_position, obs, state)
 
         pygame.display.flip()
+
+    def _format_obs_and_props(
+        self, obs: ObsFeatures, propositions: jax.Array, all_propositions: tuple[str]
+    ) -> str:
+        """Neatly formats the observations and propositions into a single string."""
+        output = ["\n--- Observations ---\n"]
+        if not isinstance(obs, ObsFeatures):
+            output.append(f"{obs}\n")
+            output.append("--- Propositions ---\n")
+            output.append(self._format_propositions(propositions, all_propositions))
+            output.append("--------------------\n")
+            return "".join(output)
+
+        output.append(f"Type: {type(obs).__name__}\n")
+        for field, value in obs._asdict().items():
+            if not isinstance(value, jax.Array):
+                output.append(f"  {field}: {value}\n")
+                continue
+
+            if value.ndim == 2:
+                output.append(f"  {field}: shape {value.shape}\n")
+                if field == "lidar":
+                    output.append(self._format_lidar_field(value))
+            else:
+                with jnp.printoptions(precision=2, suppress=True):
+                    output.append(f"  {field}: {value}\n")
+
+        output.append("--- Propositions ---\n")
+        output.append(self._format_propositions(propositions, all_propositions))
+        output.append("--------------------\n")
+        return "".join(output)
+
+    def _format_lidar_field(self, value: jax.Array) -> str:
+        lines = []
+        num_colors, num_bins = value.shape
+
+        # Header
+        header_parts = [f"{'Bin':>3}"]
+        header_parts.extend([f"{f'C{i}':>5}" for i in range(num_colors)])
+        lines.append(f"    {' | '.join(header_parts)}\n")
+
+        # Separator
+        separator_parts = [f"{'-' * 3}"]
+        separator_parts.extend([f"{'-' * 5}" for _ in range(num_colors)])
+        lines.append(f"    {'-+-'.join(separator_parts)}\n")
+
+        # Data rows
+        for i in range(num_bins):
+            row_parts = [f"{i:3d}"]
+            row_parts.extend([f"{value[j, i]:5.2f}" for j in range(num_colors)])
+            lines.append(f"    {' | '.join(row_parts)}\n")
+
+        return "".join(lines)
+
+    def _format_propositions(
+        self, propositions: jax.Array, all_propositions: tuple[str]
+    ) -> str:
+        """Formats the propositions into a string."""
+        lines = []
+        true_props = {p for p in propositions.tolist() if p != -1}
+
+        if not all_propositions:
+            return ""
+
+        max_len = max(len(p) for p in all_propositions)
+
+        for i, prop_name in enumerate(all_propositions):
+            is_true = i in true_props
+            lines.append(f"  {prop_name:<{max_len + 1}}: {is_true}\n")
+        return "".join(lines)
 
     def _draw_agent(self, position: jax.Array, angle: jax.Array):
         # Draw agent heading as a rectangle
@@ -196,12 +272,12 @@ class Renderer(BaseRenderer[EnvState, ObsFeatures]):
         angular_velocity = 0.0
 
         if keys[pygame.K_w]:
-            force = self._params.max_force
+            force = 1.0
         if keys[pygame.K_s]:
-            force = -self._params.max_force
+            force = -1.0
         if keys[pygame.K_a]:
-            angular_velocity = self._params.max_angular_velocity
+            angular_velocity = 1.0
         if keys[pygame.K_d]:
-            angular_velocity = -self._params.max_angular_velocity
+            angular_velocity = -1.0
 
         return jnp.array([force, angular_velocity])

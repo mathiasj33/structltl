@@ -1,7 +1,14 @@
+# Project-specific ignores
 local/
+outputs/
 runs/
+*.zip
+data/
+dependencies/
+ldba.png
+.VSCodeCounter/
 
-# pixi environments
+# Pixi environments
 .pixi
 *.egg-info
 
@@ -145,7 +152,6 @@ celerybeat.pid
 .env
 .envrc
 .venv
-env/
 venv/
 ENV/
 env.bak/

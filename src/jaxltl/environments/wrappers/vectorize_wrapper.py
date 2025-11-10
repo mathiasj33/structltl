@@ -1,42 +1,57 @@
 from functools import partial
 from typing import Any, NamedTuple
 
-import equinox as eqx
 import jax
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
 class VectorizeWrapper[
-    TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
-](EnvWrapper[TEnvState, TEnvParams, TObsFeatures]):
+    TResetOptions: NamedTuple,
+](EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]):
     """Vectorize the environment using vmap."""
 
     def __init__(
         self,
-        env: EnvWrapper[TEnvState, TEnvParams, TObsFeatures]
-        | Environment[TEnvState, TEnvParams, TObsFeatures],
+        env: (
+            EnvWrapper[TEnvParams, TObsFeatures, TResetOptions]
+            | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
+        ),
     ):
         super().__init__(env)
 
-    @partial(jax.vmap, in_axes=(None, 0, None))
+    # We currently don't vmap over options at this level (options here are global for
+    # all parallel envs)
+    # Instead, each env's options get overridden by the env sampler at a lower wrapper
+    @partial(jax.vmap, in_axes=(None, 0, 0, None, None))
     def reset(
-        self, key: jax.Array, params: TEnvParams
-    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        return super().reset(key, params)
+        self,
+        key: jax.Array,
+        state: WrapperState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
+        return super().reset(key, state, params, options)
+
+    @partial(jax.vmap, in_axes=(None, 0, 0, None, None))
+    def cheap_reset(
+        self,
+        key: jax.Array,
+        state: WrapperState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
+    ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
+        return super().cheap_reset(key, state, params, options)
 
     @partial(jax.vmap, in_axes=(None, 0, 0, 0, None))
     def step(
         self,
         key: jax.Array,
-        state: TEnvState,
+        state: WrapperState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> EnvTransition[TEnvState, TObsFeatures]:
+    ) -> EnvTransition[WrapperState, TObsFeatures]:
         return super().step(key, state, action, params)
-
-    def unwrapped(self, state: Any) -> TEnvState:
-        return self._env.unwrapped(state)

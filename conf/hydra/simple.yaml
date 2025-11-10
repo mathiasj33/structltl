@@ -1,9 +1,9 @@
-run:
-  dir: runs/${env}/${run}
-
+# A simple Hydra config that logs to a file in the outputs directory
+output_subdir: null
 job:
-  chdir: true # Change the working directory to the output directory
-
+  chdir: false
+run:
+  dir: outputs
 job_logging:
   formatters:
     simple:

@@ -3,15 +3,14 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import NamedTuple
 
-import equinox as eqx
 import jax
 import pygame
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvParams
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
-class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
+class BaseRenderer[TObsFeatures: NamedTuple, TResetOptions: NamedTuple](ABC):
     """Base class for renderers."""
 
     def __init__(
@@ -29,10 +28,12 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
     @abstractmethod
     def render(
         self,
-        state: TEnvState,
-        previous_state: TEnvState,
+        state: WrapperState,
+        previous_state: WrapperState,
         obs: TObsFeatures,
+        propositions: jax.Array,
         alpha: float,
+        print_debug: bool = False,
     ):
         """Renders the environment state. Use alpha for interpolation between frames."""
         pass
@@ -68,10 +69,13 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
         self,
         env: Environment | EnvWrapper,
         params: EnvParams,
+        options: TResetOptions | None = None,
         time_scale: float = 1.0,
-        policy: Callable[[EnvObservation[TObsFeatures], jax.Array], jax.Array]
-        | None = None,
+        policy: (
+            Callable[[EnvObservation[TObsFeatures], jax.Array], jax.Array] | None
+        ) = None,
         key: jax.Array | None = None,
+        print_debug: bool = False,
     ):
         """Run the environment with manual control.
 
@@ -82,24 +86,36 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
             policy: Optional policy function to generate actions from observations. If
                     None, user input is used to generate actions.
             key: JAX random key. If None, a default key is used.
+            print_debug: Whether to print debug information.
         """
 
         if key is None:
             key = jax.random.key(0)
         key, key_reset = jax.random.split(key)
-        state, obs = env.reset(key_reset, params)
+        state, obs = env.reset(key_reset, None, params, options)
         action = policy(obs, key) if policy else env.action_space(params).sample(key)  # type: ignore
         # Warm-up step, make sure everything is jitted
-        env.step(key, state, action, params)  # type: ignore
+        transition = env.step(key, state, action, params)  # type: ignore
         previous_state = state
 
         clock = pygame.time.Clock()
         time_accumulator = 0.0
+        print_debug_time_accumulator = 0.0
+        print_debug_interval = 0.1  # seconds
 
         while True:
             # Get elapsed time in seconds and add to accumulator
-            time_accumulator += (clock.tick(180) / 1000.0) * time_scale
+            delta_time = (clock.tick(180) / 1000.0) * time_scale
+            time_accumulator += delta_time
             self.show_fps(clock)
+
+            # Determine if we should print debug info this frame
+            print_debug_this_frame = False
+            if print_debug:
+                print_debug_time_accumulator += delta_time
+                if print_debug_time_accumulator >= print_debug_interval:
+                    print_debug_this_frame = True
+                    print_debug_time_accumulator -= print_debug_interval
 
             # Get user action once per frame
             pressed_keys = self.get_pressed_keys()
@@ -116,6 +132,9 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
                 state = transition.state
                 obs = transition.observation
 
+                if transition.reward > 0 and not print_debug:
+                    print(f"Reward received: {transition.reward}")
+
                 if transition.truncated or transition.terminated:
                     previous_state = state
                     # If we reset, we can break the inner loop to render the new state
@@ -126,11 +145,20 @@ class BaseRenderer[TEnvState: eqx.Module, TObsFeatures: NamedTuple](ABC):
             # Calculate interpolation factor
             alpha = float(time_accumulator / params.dt)
             self.render(
-                env.unwrapped(state), env.unwrapped(previous_state), obs.features, alpha
+                state, previous_state, obs.features, transition.propositions, alpha
             )
-            props = {
-                env.propositions[i]
-                for i, p in enumerate(obs.propositions.tolist())
-                if p
-            }
-            print(props)
+
+            if print_debug_this_frame:
+                print(
+                    self._format_obs_and_props(
+                        obs.features, transition.propositions, env.propositions
+                    ),
+                    end="",
+                )
+
+    @abstractmethod
+    def _format_obs_and_props(
+        self, obs: TObsFeatures, propositions: jax.Array, all_propositions: tuple[str]
+    ) -> str:
+        """Neatly formats the observations and propositions into a single string."""
+        pass

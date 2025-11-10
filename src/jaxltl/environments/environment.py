@@ -1,6 +1,7 @@
 """Abstract base class for all jaxltl environments.
 
-Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/environments/environment.py)."""
+Adapted from gymnax (https://github.com/RobertTLange/gymnax/blob/main/gymnax/environments/environment.py).
+"""
 
 from abc import abstractmethod
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl.environments.spaces import Space
+from jaxltl.ltl.logic.assignment import Assignment
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -26,11 +28,10 @@ class EnvParams:
     max_steps_in_episode: int
 
 
-class EnvObservation[TObsFeatures: NamedTuple](NamedTuple):
-    """Environment observation."""
+class EnvObservation[TObsFeatures: NamedTuple](eqx.Module):
+    """Environment observation. Can be extended by wrappers to add additional fields."""
 
     features: TObsFeatures
-    propositions: jax.Array  # shape: (num_propositions,) boolean
 
 
 class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple):
@@ -42,6 +43,8 @@ class EnvTransition[TEnvState: eqx.Module, TObsFeatures: NamedTuple](NamedTuple)
     terminated: jax.Array  # shape: () boolean
     truncated: jax.Array  # shape: () boolean
     terminal_observation: EnvObservation[TObsFeatures]  # used if done
+    # shape: (num_propositions,) int32: index in propositions / -1 for padding
+    propositions: jax.Array
     info: dict[Any, Any]
 
     @property
@@ -54,35 +57,77 @@ class Environment[
     TEnvState: eqx.Module,
     TEnvParams,
     TObsFeatures: NamedTuple,
+    TResetOptions: NamedTuple,
 ](eqx.Module):
     """Abstract base class for environments."""
 
     default_params: TEnvParams
     # Maps indices in obs.propositions to names
     propositions: tuple[str, ...]
+    assignments_array: jax.Array  # shape: (num_assignments, num_propositions) int32
+
+    def __init__(self, default_params: TEnvParams, propositions: tuple[str, ...]):
+        self.default_params = default_params
+        self.propositions = propositions
+        self.assignments_array = self._compute_assignments_array()
 
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=1)
+    @eqx.debug.assert_max_traces(max_traces=2)
     def reset(
-        self, key: jax.Array, params: TEnvParams
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
     ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
-        """Performs resetting of environment."""
-        state, obs = self.reset_env(key, params)
-        obs = EnvObservation(
-            features=obs,
-            propositions=self.compute_propositions(state, params),
-        )
-        return state, obs
+        """Performs resetting of environment.
+
+        Dependence on state is needed for some wrappers (e.g. CurriculumWrapper).
+        """
+        state = self._reset(key, state, params, options)
+        return state, self.compute_obs(state, params)
 
     @abstractmethod
-    def reset_env(
-        self, key: jax.Array, params: TEnvParams
-    ) -> tuple[TEnvState, TObsFeatures]:
+    def _reset(
+        self,
+        key: jax.Array,
+        state: TEnvState | None,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
+    ) -> TEnvState:
         """Environment-specific reset."""
         pass
 
     @eqx.filter_jit
-    @eqx.debug.assert_max_traces(max_traces=1)
+    @eqx.debug.assert_max_traces(max_traces=2)
+    def cheap_reset(
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
+    ) -> tuple[TEnvState, EnvObservation[TObsFeatures]]:
+        """Performs a cheap reset of the environment given the current state.
+        Since JIT requires resetting on every step, this method can be used to implement
+        a faster reset to improve performance. See AutoResetWrapper for further details.
+        """
+
+        state = self._cheap_reset(key, state, params, options)
+        return state, self.compute_obs(state, params)
+
+    @abstractmethod
+    def _cheap_reset(
+        self,
+        key: jax.Array,
+        state: TEnvState,
+        params: TEnvParams,
+        options: TResetOptions | None = None,
+    ) -> TEnvState:
+        """Environment-specific cheap reset."""
+        pass
+
+    @eqx.filter_jit
+    @eqx.debug.assert_max_traces(max_traces=2)
     def step(
         self,
         key: jax.Array,
@@ -91,13 +136,9 @@ class Environment[
         params: TEnvParams,
     ) -> EnvTransition[TEnvState, TObsFeatures]:
         """Performs step transitions in the environment."""
-        next_state, obs, reward, terminated, info = self.step_env(
-            key, state, action, params
-        )
-        obs = EnvObservation(
-            features=obs,
-            propositions=self.compute_propositions(next_state, params),
-        )
+        next_state, reward, terminated, info = self._step(key, state, action, params)
+        obs = self.compute_obs(next_state, params)
+        propositions = self.compute_propositions(next_state, params)
         transition = EnvTransition(
             state=next_state,
             observation=obs,
@@ -105,27 +146,40 @@ class Environment[
             terminated=terminated,
             truncated=jnp.array(False, dtype=jnp.bool),
             terminal_observation=obs,
+            propositions=propositions,
             info=info,
         )
         return jax.lax.stop_gradient(transition)
 
     @abstractmethod
-    def step_env(
+    def _step(
         self,
         key: jax.Array,
         state: TEnvState,
         action: int | float | jax.Array,
         params: TEnvParams,
-    ) -> tuple[TEnvState, TObsFeatures, jax.Array, jax.Array, dict[Any, Any]]:
+    ) -> tuple[TEnvState, jax.Array, jax.Array, dict[Any, Any]]:
         """Environment-specific step transition.
-        Returns: next_state, observation, reward, terminated, info"""
+        Returns: next_state, reward, terminated, info"""
+        pass
+
+    def compute_obs(
+        self, state: TEnvState, params: TEnvParams
+    ) -> EnvObservation[TObsFeatures]:
+        """Compute the observation for a given state."""
+        return EnvObservation(features=self._compute_obs(state, params))
+
+    @abstractmethod
+    def _compute_obs(self, state: TEnvState, params: TEnvParams) -> TObsFeatures:
+        """Compute the environment-specific observation for a given state."""
         pass
 
     @abstractmethod
     def compute_propositions(self, state: TEnvState, params: TEnvParams) -> jax.Array:
         """Computes atomic propositions from environment state.
 
-        Returns: boolean array of shape (num_propositions,)"""
+        Returns: int32 array of shape (num_propositions,) where each entry is the index
+        in self.propositions (or -1 for padding)."""
         pass
 
     def observation_space(self, params: TEnvParams | None = None) -> Space:
@@ -148,6 +202,45 @@ class Environment[
     def _action_space(self, params: TEnvParams) -> Space:
         pass
 
+    def map_assignment_to_index(self, assignment: jax.Array) -> jax.Array:
+        """Maps a proposition assignment to an index in the assignments array.
+
+        Args:
+            assignment: jax.Array of shape (num_propositions,) int32
+
+        Returns:
+            jax.Array of shape () int32: index in assignments array
+        """
+        # (num_assignments,)
+        assignment = jnp.sort(assignment, descending=True)
+        matches = jnp.all(self.assignments_array == assignment, axis=1)
+        return jnp.argmax(matches)  # () int32
+
+    def _compute_assignments_array(self) -> jax.Array:
+        """Returns the possible assignments in the environment in array form.
+
+        Returns:
+            jax.Array of shape (num_assignments, num_propositions) int32
+        """
+        assignments = -jnp.ones(
+            (len(self.assignments), len(self.propositions)), dtype=jnp.int32
+        )
+        for i, assignment in enumerate(self.assignments):
+            prop_indices = sorted(
+                [self.propositions.index(p) for p in assignment], reverse=True
+            )
+            # padding
+            prop_indices += [-1] * (len(self.propositions) - len(prop_indices))
+            prop_indices = jnp.array(prop_indices, dtype=jnp.int32)
+            assignments = assignments.at[i, :].set(prop_indices)
+        return assignments
+
+    @property
+    @abstractmethod
+    def assignments(self) -> list[Assignment]:
+        """Returns the possible assignments as a list of Assignment objects."""
+        pass
+
     @property
     def name(self) -> str:
         """Environment name."""
@@ -160,6 +253,25 @@ class Environment[
     @abstractmethod
     def get_renderer(
         self, params: TEnvParams, **kwargs
-    ) -> "BaseRenderer[TEnvState, TObsFeatures]":
+    ) -> "BaseRenderer[TObsFeatures, TResetOptions]":
         """Returns a renderer for the environment."""
         pass
+
+    def plot_trajectories(
+        self,
+        trajs: TEnvState,
+        lengths: jax.Array,
+        params: TEnvParams,
+        **plotting_kwargs,
+    ) -> None:
+        """Plots trajectories of environment states.
+
+        Args:
+            trajs: Batched EnvStates of shape (num_episodes, max_length, ...)
+            lengths: Trajectory lengths (num_episodes,) int32
+            params: Environment parameters
+            plotting_kwargs: Additional keyword arguments for the plotting function
+        """
+        raise NotImplementedError(
+            f"plot_trajectories not implemented for {self.name} environment."
+        )

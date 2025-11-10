@@ -9,7 +9,7 @@ nearest zone of each color in a set of evenly spaced angular bins.
 
 import dataclasses
 from dataclasses import dataclass
-from typing import Any, NamedTuple, override
+from typing import TYPE_CHECKING, Any, NamedTuple, override
 
 import equinox as eqx
 import jax
@@ -17,7 +17,11 @@ import jax.numpy as jnp
 from jax import lax
 
 from jaxltl.environments import environment, spaces
-from jaxltl.environments.renderer.renderer import BaseRenderer
+from jaxltl.environments.zone_env.plotter import draw_trajectories
+from jaxltl.ltl.logic.assignment import Assignment
+
+if TYPE_CHECKING:
+    from jaxltl.environments.renderer.renderer import BaseRenderer
 
 _EPS = 1e-8
 _MAX_SAMPLING_ITERS = 1000
@@ -26,7 +30,6 @@ _MAX_SAMPLING_ITERS = 1000
 @dataclass(frozen=True)
 class EnvParams(environment.EnvParams):
     # World
-    agent_radius: float
     world_size: float
     spawn_size: float
     # Zones
@@ -35,6 +38,7 @@ class EnvParams(environment.EnvParams):
     keepout_radius: float
     # Lidar
     num_lidar_bins: int
+    exp_gain: float
     # Physics
     dt: float
     drag: float
@@ -62,16 +66,20 @@ class ObsFeatures(NamedTuple):
     lidar: jax.Array  # shape: (C, num_bins)
 
 
-class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
+class ResetOptions(NamedTuple):
+    pass
+
+
+class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOptions]):
     default_params = EnvParams(
         max_steps_in_episode=1000,
-        agent_radius=0.1,
         world_size=6.6,
         spawn_size=5.0,
         zone_radius=0.4,
         zones_per_color=2,
         keepout_radius=0.55,
         num_lidar_bins=16,
+        exp_gain=0.5,
         dt=0.05,
         drag=0.08,
         max_speed=3.0,
@@ -79,7 +87,6 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         max_angular_velocity=3.0,
     )
     propositions = ("red", "green", "purple", "yellow")
-    reset_to_initial_state = True  # the reset function is expensive, so we avoid it
 
     def __init__(self, **kwargs):
         params = dataclasses.asdict(self.default_params) | kwargs
@@ -111,24 +118,24 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         )
 
     @override
-    def reset_env(
-        self, key: jax.Array, params: EnvParams
-    ) -> tuple[EnvState, NamedTuple]:
-        key_zones, key_pos, key_angle = jax.random.split(key, 3)
+    def _reset(
+        self,
+        key_angle: jax.Array,
+        state: EnvState | None,
+        params: EnvParams,
+        options: ResetOptions | None = None,
+    ) -> EnvState:
+        key_zones, key_pos, key_angle = jax.random.split(key_angle, 3)
         centers, colors = self._sample_zones(key_zones, params)
-        position = self._sample_agent_position(key_pos, params, centers)
+        agent_pos = self._sample_agent_position(key_pos, params, centers)
+
         velocity = jnp.zeros(2, dtype=jnp.float32)
         acceleration = jnp.zeros(2, dtype=jnp.float32)
-        angle = jax.random.uniform(
-            key_angle,
-            shape=(),
-            minval=-jnp.pi,
-            maxval=jnp.pi,
-        )
+        angle = jax.random.uniform(key_angle, shape=(), minval=-jnp.pi, maxval=jnp.pi)
         angular_velocity = jnp.zeros((), dtype=jnp.float32)
 
-        state = EnvState(
-            position=position,
+        return EnvState(
+            position=agent_pos,
             velocity=velocity,
             angle=angle,
             angular_velocity=angular_velocity,
@@ -136,8 +143,16 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
             zone_centers=centers,
             zone_colors=colors,
         )
-        obs = self._compute_obs(state, params)
-        return state, obs
+
+    @override
+    def _cheap_reset(
+        self,
+        key: jax.Array,
+        state: EnvState,
+        params: EnvParams,
+        options: ResetOptions | None = None,
+    ) -> EnvState:
+        raise NotImplementedError("Cheap reset is not implemented for ZoneEnv.")
 
     def _sample_zones(
         self, key: jax.Array, params: EnvParams
@@ -223,6 +238,60 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         )
         return pos
 
+    @override
+    def _step(
+        self,
+        key: jax.Array,
+        state: EnvState,
+        action: jax.Array,
+        params: EnvParams,
+    ) -> tuple[EnvState, jax.Array, jax.Array, dict[Any, Any]]:
+        force = jnp.clip(
+            action[0] * params.max_force, -params.max_force, params.max_force
+        )
+        target_angular_velocity = jnp.clip(
+            action[1] * params.max_angular_velocity,
+            -params.max_angular_velocity,
+            params.max_angular_velocity,
+        )
+        heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
+        acceleration = heading * force
+
+        velocity = state.velocity + acceleration * params.dt
+        velocity *= 1.0 - params.drag
+
+        speed = jnp.linalg.norm(velocity)
+        scaling_factor = jnp.clip(params.max_speed / speed, 0.0, 1.0)
+        velocity: jax.Array = jnp.where(
+            speed > params.max_speed, velocity * scaling_factor, velocity
+        )
+
+        position = state.position + velocity * params.dt
+
+        angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
+        angular_velocity = target_angular_velocity
+
+        reward = jnp.zeros((), dtype=jnp.float32)
+        half_size = params.world_size / 2.0
+        terminated = jnp.any(jnp.abs(position) > half_size)
+
+        next_state = EnvState(
+            position=position,
+            velocity=velocity,
+            angle=angle,
+            angular_velocity=angular_velocity,
+            acceleration=acceleration,
+            zone_centers=state.zone_centers,
+            zone_colors=state.zone_colors,
+        )
+        return next_state, reward, terminated, {}
+
+    @staticmethod
+    def _wrap_angle(angle: jax.Array) -> jax.Array:
+        """Wrap angles to the (-pi, pi] interval."""
+        return (angle + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
+
+    @override
     def _compute_obs(self, state: EnvState, params: EnvParams) -> ObsFeatures:
         """Compute the observation for a given state."""
         lidar = self._compute_lidar(state, params)
@@ -238,7 +307,6 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
         Returns an array of shape (C, num_bins) with distances in world units.
         """
-        max_range = params.world_size
         pos = state.position  # (2,)
         bin_size = 2.0 * jnp.pi / params.num_lidar_bins
         heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])  # (2,)
@@ -253,7 +321,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
 
             direction = zone_pos - pos  # (2,)
             dist: float = jnp.linalg.norm(direction)  # ()
-            sensor = jnp.clip(1.0 - dist / max_range, 0.0, 1.0)  # ()
+            sensor = jnp.exp(-params.exp_gain * dist)
             direction = direction / (dist + _EPS)  # (2,)
             dotp = jnp.dot(heading, direction)
             cross = jnp.cross(heading, direction)
@@ -283,91 +351,64 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures]):
         return lidar
 
     @override
-    def step_env(
-        self,
-        key: jax.Array,
-        state: EnvState,
-        action: jax.Array,
-        params: EnvParams,
-    ) -> tuple[EnvState, NamedTuple, jax.Array, jax.Array, dict[Any, Any]]:
-        force = jnp.clip(action[0], -params.max_force, params.max_force)
-        target_angular_velocity = jnp.clip(
-            action[1], -params.max_angular_velocity, params.max_angular_velocity
-        )
-        heading = jnp.array([jnp.cos(state.angle), jnp.sin(state.angle)])
-        acceleration = heading * force
-
-        velocity = state.velocity + acceleration * params.dt
-        velocity *= 1.0 - params.drag
-
-        speed = jnp.linalg.norm(velocity)
-        scaling_factor = jnp.clip(params.max_speed / speed, 0.0, 1.0)
-        velocity: jax.Array = jnp.where(
-            speed > params.max_speed,
-            velocity * scaling_factor,
-            velocity,
-        )  # type: ignore
-
-        position = state.position + velocity * params.dt
-
-        # If the agent is out of bounds, reflect its velocity and clamp its position
-        # to the edge of the world.
-        half_size = params.world_size / 2.0 - params.agent_radius / 2.0
-        velocity = jnp.where(jnp.abs(position) > half_size, -velocity, velocity)
-        position = jnp.clip(position, -half_size, half_size)
-
-        angle = self._wrap_angle(state.angle + target_angular_velocity * params.dt)
-        angular_velocity = target_angular_velocity
-
-        props = self.compute_propositions(state, params)
-        reward = jnp.where(props[0], 1.0, 0.0)
-
-        # terminated = jnp.zeros((), dtype=jnp.bool)
-        terminated = reward > 0.0
-        next_state = EnvState(
-            position=position,
-            velocity=velocity,
-            angle=angle,
-            angular_velocity=angular_velocity,
-            acceleration=acceleration,
-            zone_centers=state.zone_centers,
-            zone_colors=state.zone_colors,
-        )
-        next_obs = self._compute_obs(next_state, params)
-        return next_state, next_obs, reward, terminated, {}
-
-    @staticmethod
-    def _wrap_angle(angle: jax.Array) -> jax.Array:
-        """Wrap angles to the (-pi, pi] interval."""
-        return (angle + jnp.pi) % (2.0 * jnp.pi) - jnp.pi
-
-    @override
     def compute_propositions(self, state: EnvState, params: EnvParams) -> jax.Array:
         """Compute which zones the agent is currently inside.
 
-        Returns a boolean array of shape (C,) indicating for each color whether
-        the agent is inside any zone of that color.
+        Returns an int32 array of shape (C,) containing the color ids of the zones
+        the agent is inside, with -1 as padding.
         """
         pos = state.position  # (2,)
         centers = state.zone_centers  # (N,2)
         colors = state.zone_colors  # (N,)
 
         dists = jnp.linalg.norm(centers - pos, axis=1)  # (N,)
-        inside = dists < params.zone_radius + params.agent_radius  # (N,)
+        inside = dists < params.zone_radius  # (N,)
 
         def compute_color_prop(color_id: jax.Array) -> jax.Array:
             mask_color = colors == color_id  # (N,)
             inside_color = jnp.logical_and(mask_color, inside)  # (N,)
-            return jnp.any(inside_color)
+            return jax.lax.cond(jnp.any(inside_color), lambda: color_id, lambda: -1)
 
         color_ids = jnp.arange(len(self.propositions), dtype=jnp.int32)
         propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
-        return propositions
+        return jnp.sort(propositions, descending=True)
 
+    @property
+    @override
+    def assignments(self) -> list[Assignment]:
+        """Returns all possible assignments in the environment."""
+        assignments = [Assignment(frozenset({color})) for color in self.propositions]
+        assignments.append(Assignment(frozenset()))  # empty assignment
+        return assignments
+
+    @override
     def get_renderer(
         self, env_params: EnvParams, **kwargs
-    ) -> BaseRenderer[EnvState, ObsFeatures]:
+    ) -> "BaseRenderer[ObsFeatures, ResetOptions]":
         """Returns a renderer for the environment."""
         from .renderer import Renderer
 
         return Renderer(env_params, **kwargs)
+
+    @override
+    def plot_trajectories(
+        self,
+        trajs: EnvState,
+        lengths: jax.Array,
+        params: EnvParams,
+        **plotting_kwargs,
+    ) -> None:
+        """Plots trajectories of environment states.
+
+        Args:
+            trajs: Batched EnvStates of shape (num_episodes, max_length, ...)
+            params: Environment parameters
+            plotting_kwargs: Additional keyword arguments for the plotting function
+        """
+        zone_positions = trajs.zone_centers[:, 0].tolist()
+        zone_colors = trajs.zone_colors[:, 0].tolist()
+        zone_colors = [[self.propositions[i] for i in cs] for cs in zone_colors]
+        paths = [
+            trajs.position[i, : lengths[i]].tolist() for i in range(lengths.shape[0])
+        ]
+        draw_trajectories(zone_positions, zone_colors, paths, **plotting_kwargs)

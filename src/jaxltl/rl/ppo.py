@@ -1,6 +1,7 @@
 """Proximal Policy Optimization (PPO) algorithm implementation.
 
-Adapted from PureJaxRL's PPO implementation (https://github.com/luchris429/purejaxrl/blob/main/purejaxrl/ppo_continuous_action.py)."""
+Adapted from PureJaxRL's PPO implementation (https://github.com/luchris429/purejaxrl/blob/main/purejaxrl/ppo_continuous_action.py).
+"""
 
 import math
 from collections.abc import Callable
@@ -11,6 +12,7 @@ import jax
 import jax.experimental
 import jax.numpy as jnp
 import optax
+from jax.experimental import io_callback
 from jaxtyping import PyTree
 
 from jaxltl import eqx_utils
@@ -35,6 +37,21 @@ class PPOConfig(NamedTuple):
     lr: float
     max_grad_norm: float
     anneal_lr: bool
+    adam_eps: float
+
+
+class PPOTransition(NamedTuple):
+    """PPO-relevant transition information."""
+
+    terminated: jax.Array
+    truncated: jax.Array
+    action: jax.Array
+    value: jax.Array
+    reward: jax.Array
+    log_prob: jax.Array
+    obs: PyTree
+    terminal_obs: PyTree
+    info: PyTree
 
 
 class PPO(RLAlgorithm):
@@ -70,10 +87,10 @@ class PPO(RLAlgorithm):
         optim = optax.chain(
             optax.clip_by_global_norm(self.config.max_grad_norm),
             optax.adam(
-                learning_rate=self.linear_schedule
-                if self.config.anneal_lr
-                else self.config.lr,
-                eps=1e-5,
+                learning_rate=(
+                    self.linear_schedule if self.config.anneal_lr else self.config.lr
+                ),
+                eps=self.config.adam_eps,
             ),
         )
         train_state = TrainState.create(model, optim)
@@ -81,7 +98,7 @@ class PPO(RLAlgorithm):
         # Initialize environment
         key, reset_key = jax.random.split(key)
         reset_keys = jax.random.split(reset_key, self.config.num_envs)
-        env_state, obsv = env.reset(reset_keys, env_params)
+        env_state, obsv = env.reset(reset_keys, None, env_params, None)
 
         # Calculate number of updates and callback intervals
         num_steps_per_update = self.config.num_envs * self.config.num_steps
@@ -97,12 +114,16 @@ class PPO(RLAlgorithm):
 
         # Training loop
         def callback_iter(
-            carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array], _
+            carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array, jax.Array],
+            _,
         ):
             def step(
-                carry: tuple[TrainState[ActorCritic], PyTree, PyTree, jax.Array], _
+                carry: tuple[
+                    TrainState[ActorCritic], PyTree, PyTree, jax.Array, jax.Array
+                ],
+                _,
             ):
-                train_state, obsv, env_state, key = carry
+                train_state, obsv, env_state, key, step_count = carry
                 key, step_key = jax.random.split(key)
                 train_state, obsv, env_state, metric = self._train_step(
                     train_state,
@@ -113,18 +134,21 @@ class PPO(RLAlgorithm):
                     env_params,
                     key=step_key,
                 )
-                carry = (train_state, obsv, env_state, key)
+                carry = (train_state, obsv, env_state, key, step_count + 1)
                 return carry, metric
 
             carry, metric = eqx_utils.filter_scan(
                 step, carry, None, updates_per_callback
             )
             if callback:
-                jax.experimental.io_callback(callback, None, metric, seed)
+                train_state, step_count = carry[0], carry[4]
+                total_step = step_count * self.config.num_envs * self.config.num_steps
+                params, _ = eqx.partition(train_state.model, eqx.is_array)
+                io_callback(callback, None, metric, params, seed, total_step)
             return carry, metric
 
         key, update_key = jax.random.split(key)
-        carry = (train_state, obsv, env_state, update_key)
+        carry = (train_state, obsv, env_state, update_key, jnp.zeros((), jnp.int32))
         carry, metric = eqx_utils.filter_scan(callback_iter, carry, None, num_callbacks)
         train_state = carry[0]
         return train_state.model, metric
@@ -167,6 +191,7 @@ class PPO(RLAlgorithm):
             env_params,
             key=rollout_key,
         )
+
         advantages, targets = self._calculate_gae(trajs, last_obs, train_state.model)
 
         # Update update_epochs number of times over the collected data
@@ -205,7 +230,7 @@ class PPO(RLAlgorithm):
         env_params: PyTree,
         *,
         key: jax.Array,
-    ) -> tuple[PyTree, PyTree, PyTree]:
+    ) -> tuple[PPOTransition, PyTree, PyTree]:
         """Collect a batch of trajectories using the current policy.
 
         Returns:
@@ -244,7 +269,7 @@ class PPO(RLAlgorithm):
         return trajs, carry[1], carry[0]
 
     def _calculate_gae(
-        self, trajs: PyTree, last_obs: PyTree, model: ActorCritic
+        self, trajs: PPOTransition, last_obs: PyTree, model: ActorCritic
     ) -> tuple[jax.Array, jax.Array]:
         """Calculate Generalized Advantage Estimation (GAE) and target values.
 
@@ -287,7 +312,7 @@ class PPO(RLAlgorithm):
 
     def _get_minibatches(
         self,
-        trajs: PyTree,
+        trajs: PPOTransition,
         advantages: jax.Array,
         targets: jax.Array,
         key: jax.Array,
@@ -295,7 +320,8 @@ class PPO(RLAlgorithm):
         """Prepare shuffled minibatches from the collected trajectories.
 
         Returns:
-            minibatches: PyTree with shape (num_minibatches, batch_size_per_minibatch, ...)."""
+            minibatches: PyTree with shape (num_minibatches, batch_size_per_minibatch, ...).
+        """
 
         num_transitions = self.config.num_steps * self.config.num_envs
         key, perm_key = jax.random.split(key)
@@ -311,7 +337,11 @@ class PPO(RLAlgorithm):
         return minibatches
 
     def _loss_fn(
-        self, model: ActorCritic, trajs: PyTree, gae: jax.Array, targets: jax.Array
+        self,
+        model: ActorCritic,
+        trajs: PPOTransition,
+        gae: jax.Array,
+        targets: jax.Array,
     ) -> tuple[jax.Array, tuple[jax.Array, jax.Array, jax.Array]]:
         """Calculate the PPO loss.
 
@@ -353,17 +383,3 @@ class PPO(RLAlgorithm):
             - self.config.ent_coef * entropy
         )
         return total_loss, (value_loss, loss_actor, entropy)
-
-
-class PPOTransition(NamedTuple):
-    """PPO-relevant transition information."""
-
-    terminated: jax.Array
-    truncated: jax.Array
-    action: jax.Array
-    value: jax.Array
-    reward: jax.Array
-    log_prob: jax.Array
-    obs: PyTree
-    terminal_obs: PyTree
-    info: PyTree
