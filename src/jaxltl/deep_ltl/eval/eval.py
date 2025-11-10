@@ -127,6 +127,7 @@ class Evaluator(eqx.Module):
             is_accepting = jnp.where(  # epsilon transitions cannot be accepting
                 epsilon_action.astype(jnp.bool), False, is_accepting
             )
+            is_sink = jax.vmap(ldba.is_sink_state)(next_ldba_state)
 
             # choose new sequences based on updated LDBA state
             needs_update = next_ldba_state != eval_state.ldba_state
@@ -149,6 +150,7 @@ class Evaluator(eqx.Module):
             new_completed = jnp.logical_or(
                 transition.done, jnp.logical_and(ldba.finite, is_accepting)
             )
+            new_completed = jnp.logical_or(new_completed, is_sink)
             completed = jnp.logical_or(eval_state.completed, new_completed)
 
             new_eval_state = EvalState(

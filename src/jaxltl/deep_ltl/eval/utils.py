@@ -96,11 +96,13 @@ def _batch_ldbas(ldbas: list[JaxLDBA]) -> JaxLDBA:
         (batch_size, max_num_states, num_assignments + 1), dtype=jnp.int32
     )
     accepting = jnp.zeros((batch_size, max_num_states, num_assignments), dtype=bool)
+    sink_states = jnp.zeros((batch_size, max_num_states), dtype=bool)
     initial_states = jnp.zeros((batch_size,), dtype=jnp.int32)
 
     for i, ldba in enumerate(ldbas):
         transitions = transitions.at[i, : ldba.num_states, :].set(ldba.transitions)
         accepting = accepting.at[i, : ldba.num_states, :].set(ldba.accepting)
+        sink_states = sink_states.at[i, : ldba.num_states].set(ldba.sink_states)
         initial_states = initial_states.at[i].set(ldba.initial_state)
 
     return JaxLDBA(
@@ -108,6 +110,7 @@ def _batch_ldbas(ldbas: list[JaxLDBA]) -> JaxLDBA:
         initial_state=initial_states,
         transitions=transitions,
         accepting=accepting,
+        sink_states=sink_states,
         finite=jnp.array([ldba.finite for ldba in ldbas]),
     )
 
