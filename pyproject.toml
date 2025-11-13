@@ -11,6 +11,7 @@ dependencies = [
     "distrax>=0.1.7,<0.2",
     "jax>=0.7.2,<0.8",
     "graphviz>=0.21,<0.22",
+    "jraph<=0.0.6dev0",
 ]
 
 [build-system]
