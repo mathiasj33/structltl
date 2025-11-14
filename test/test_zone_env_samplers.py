@@ -70,9 +70,14 @@ def test_reach_stay_sampler():
         num_stay=30, avoid=(0, 2), num_assignments=5, max_length=3
     )
     key = jax.random.key(0)
-    for _ in range(100):
+    for j in range(100):
         key, subkey = jax.random.split(key)
         seq = sampler.sample(subkey)
+
+        if j < 5:
+            print(
+                f"\nSampled Reach-Stay Sequence ({j}):\nReach:\n{jax.device_get(seq.reach)}\nAvoid:\n{jax.device_get(seq.avoid)}"
+            )
 
         # Check shapes
         assert seq.reach.shape == (sampler.max_length, sampler.num_assignments)
