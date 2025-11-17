@@ -59,6 +59,9 @@ def test_sampler_to_jax_and_advance():
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
 
+        # Second advance
+        advanced_seq = advanced_seq.advance()
+
 
 def test_reach_stay_sampler_to_jax_and_advance():
     env = ZoneEnv()
@@ -105,6 +108,9 @@ def test_reach_stay_sampler_to_jax_and_advance():
             print(advanced_seq.avoid)
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
+
+        # Second advance
+        advanced_seq = advanced_seq.advance()
 
 
 def test_batch_to_jax_and_advance():

@@ -46,23 +46,32 @@ def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
     max_edges = total_edges // seq_len
 
     # 1. Roll the per-graph feature arrays along the sequence axis.
-    rolled_n_node = jnp.roll(graphs.n_node, -1, axis=-1)
-    rolled_n_edge = jnp.roll(graphs.n_edge, -1, axis=-1)
+    # We don't need to do this, since all n_node values are max_nodes and n_edge values
+    # are max_edges.
+    # rolled_n_node = jnp.roll(graphs.n_node, -1, axis=-1)
+    # rolled_n_edge = jnp.roll(graphs.n_edge, -1, axis=-1)
 
     # 2. Roll the flattened node and edge arrays by one block.
     rolled_nodes = jax.tree.map(lambda x: jnp.roll(x, -max_nodes, axis=0), graphs.nodes)
+    rolled_edges = jax.tree.map(lambda x: jnp.roll(x, -max_edges, axis=0), graphs.edges)
     rolled_senders = jnp.roll(graphs.senders, -max_edges, axis=0)
     rolled_receivers = jnp.roll(graphs.receivers, -max_edges, axis=0)
 
     # 3. Pad the last step of the sequence.
     # Pad nodes
     pad_nodes_start_idx = total_nodes - max_nodes
+    rolled_nodes["mask"] = rolled_nodes["mask"].at[pad_nodes_start_idx:].set(False)
     padded_nodes = jax.tree.map(
-        lambda x: x.at[pad_nodes_start_idx:].set(-1), rolled_nodes
+        lambda v: v.at[pad_nodes_start_idx:].set(-1),
+        {k: v for k, v in rolled_nodes.items() if k != "mask"},  # still JIT compatible
     )
+    padded_nodes["mask"] = rolled_nodes["mask"]
 
     # Pad edges (create self-loops on the first node of each padded graph)
     pad_edges_start_idx = total_edges - max_edges
+    padded_edges = jax.tree.map(
+        lambda x: x.at[pad_edges_start_idx:].set(False), rolled_edges
+    )
     last_graph_node_start_idx = total_nodes - max_nodes
     padded_senders = rolled_senders.at[pad_edges_start_idx:].set(
         last_graph_node_start_idx
@@ -78,16 +87,18 @@ def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
     padded_senders = padded_senders.at[-max_edges:].set(last_graph_node_start_idx)
     padded_receivers = padded_receivers.at[-max_edges:].set(last_graph_node_start_idx)
 
-    # Set n_node and n_edge for the last step to 0.
-    rolled_n_node = rolled_n_node.at[-1].set(0)
-    rolled_n_edge = rolled_n_edge.at[-1].set(0)
+    # Set n_node and n_edge for the last step.
+    # Again, we don't need to do this since they are constant.
+    # rolled_n_node = rolled_n_node.at[-1].set(max_nodes)
+    # rolled_n_edge = rolled_n_edge.at[-1].set(max_edges)
 
     return graphs._replace(
         nodes=padded_nodes,
+        edges=padded_edges,
         senders=padded_senders,
         receivers=padded_receivers,
-        n_node=rolled_n_node,
-        n_edge=rolled_n_edge,
+        n_node=graphs.n_node,
+        n_edge=graphs.n_edge,
     )
 
 
@@ -199,13 +210,16 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         all_reach_nodes = {
             "type_idx": -np.ones((total_nodes, 1), dtype=np.int32),
             "prop_idx": -np.ones((total_nodes, 1), dtype=np.int32),
+            "mask": np.zeros((total_nodes, 1), dtype=np.bool_),
         }
+        all_reach_edges = {"mask": np.zeros((total_edges, 1), dtype=np.bool_)}
         all_reach_senders = np.zeros(total_edges, dtype=np.int32)
         all_reach_receivers = np.zeros(total_edges, dtype=np.int32)
-        all_reach_n_node = np.zeros(total_graphs, dtype=np.int32)
-        all_reach_n_edge = np.zeros(total_graphs, dtype=np.int32)
+        all_reach_n_node = np.full(total_graphs, max_nodes, dtype=np.int32)
+        all_reach_n_edge = np.full(total_graphs, max_edges, dtype=np.int32)
 
         all_avoid_nodes = jax.tree.map(np.copy, all_reach_nodes)
+        all_avoid_edges = jax.tree.map(np.copy, all_reach_edges)
         all_avoid_senders = np.copy(all_reach_senders)
         all_avoid_receivers = np.copy(all_reach_receivers)
         all_avoid_n_node = np.copy(all_reach_n_node)
@@ -218,13 +232,17 @@ class JaxGraphReachAvoidSequence(NamedTuple):
             r_graph_root, a_graph_root = seq.reach_avoid_graphs[t_idx]
 
             # --- Process Reach Graph ---
-            r_nodes, r_send, r_recv, r_n_node, r_n_edge = _convert_to_arrays(
+            r_nodes, r_edges, r_send, r_recv, r_n_node, r_n_edge = _convert_to_arrays(
                 r_graph_root, env.propositions, max_nodes, max_edges
             )
             for key in all_reach_nodes:
                 all_reach_nodes[key][
                     node_offset : node_offset + r_nodes[key].shape[0]
                 ] = r_nodes[key]
+            for key in all_reach_edges:
+                all_reach_edges[key][edge_offset : edge_offset + r_n_edge] = r_edges[
+                    key
+                ]
             all_reach_senders[edge_offset : edge_offset + r_send.shape[0]] = (
                 r_send + node_offset
             )
@@ -237,17 +255,19 @@ class JaxGraphReachAvoidSequence(NamedTuple):
             all_reach_receivers[
                 edge_offset + r_recv.shape[0] : edge_offset + max_edges
             ] = node_offset
-            all_reach_n_node[t_idx] = r_n_node
-            all_reach_n_edge[t_idx] = r_n_edge
 
             # --- Process Avoid Graph ---
-            a_nodes, a_send, a_recv, a_n_node, a_n_edge = _convert_to_arrays(
+            a_nodes, a_edges, a_send, a_recv, a_n_node, a_n_edge = _convert_to_arrays(
                 a_graph_root, env.propositions, max_nodes, max_edges
             )
             for key in all_avoid_nodes:
                 all_avoid_nodes[key][
                     node_offset : node_offset + a_nodes[key].shape[0]
                 ] = a_nodes[key]
+            for key in all_avoid_edges:
+                all_avoid_edges[key][edge_offset : edge_offset + a_n_edge] = a_edges[
+                    key
+                ]
             all_avoid_senders[edge_offset : edge_offset + a_send.shape[0]] = (
                 a_send + node_offset
             )
@@ -260,24 +280,22 @@ class JaxGraphReachAvoidSequence(NamedTuple):
             all_avoid_receivers[
                 edge_offset + a_recv.shape[0] : edge_offset + max_edges
             ] = node_offset
-            all_avoid_n_node[t_idx] = a_n_node
-            all_avoid_n_edge[t_idx] = a_n_edge
 
         # Reshape n_node/n_edge to have batch dimensions
         reach_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(-1), all_reach_nodes),
+            edges=jax.tree.map(lambda x: x.reshape(-1), all_reach_edges),
             senders=all_reach_senders,
             receivers=all_reach_receivers,
-            edges=None,
             n_node=all_reach_n_node,
             n_edge=all_reach_n_edge,
             globals=None,
         )
         avoid_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(-1), all_avoid_nodes),
+            edges=jax.tree.map(lambda x: x.reshape(-1), all_avoid_edges),
             senders=all_avoid_senders,
             receivers=all_avoid_receivers,
-            edges=None,
             n_node=all_avoid_n_node,
             n_edge=all_avoid_n_edge,
             globals=None,
@@ -343,14 +361,17 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         all_reach_nodes = {
             "type_idx": -np.ones((total_nodes, 1), dtype=np.int32),
             "prop_idx": -np.ones((total_nodes, 1), dtype=np.int32),
+            "mask": np.zeros((total_nodes, 1), dtype=np.bool_),
         }
+        all_reach_edges = {"mask": np.zeros((total_edges, 1), dtype=np.bool_)}
         all_reach_senders = np.zeros(total_edges, dtype=np.int32)
         all_reach_receivers = np.zeros(total_edges, dtype=np.int32)
-        all_reach_n_node = np.zeros(total_graphs, dtype=np.int32)
-        all_reach_n_edge = np.zeros(total_graphs, dtype=np.int32)
+        all_reach_n_node = np.full(total_graphs, max_nodes, dtype=np.int32)
+        all_reach_n_edge = np.full(total_graphs, max_edges, dtype=np.int32)
 
         # Create identical structures for avoid graphs
         all_avoid_nodes = jax.tree.map(np.copy, all_reach_nodes)
+        all_avoid_edges = jax.tree.map(np.copy, all_reach_edges)
         all_avoid_senders = np.copy(all_reach_senders)
         all_avoid_receivers = np.copy(all_reach_receivers)
         all_avoid_n_node = np.copy(all_reach_n_node)
@@ -371,14 +392,20 @@ class JaxGraphReachAvoidSequence(NamedTuple):
                         r_graph_root, a_graph_root = None, None
 
                     # --- Process Reach Graph ---
-                    r_nodes, r_send, r_recv, r_n_node, r_n_edge = _convert_to_arrays(
-                        r_graph_root, env.propositions, max_nodes, max_edges
+                    r_nodes, r_edges, r_send, r_recv, r_n_node, r_n_edge = (
+                        _convert_to_arrays(
+                            r_graph_root, env.propositions, max_nodes, max_edges
+                        )
                     )
                     # Place into flat arrays
                     for key in all_reach_nodes:
                         all_reach_nodes[key][
                             node_offset : node_offset + r_nodes[key].shape[0]
                         ] = r_nodes[key]
+                    for key in all_reach_edges:
+                        all_reach_edges[key][edge_offset : edge_offset + r_n_edge] = (
+                            r_edges[key]
+                        )
                     # Add node_offset to local indices to make them global
                     all_reach_senders[edge_offset : edge_offset + r_send.shape[0]] = (
                         r_send + node_offset
@@ -394,17 +421,20 @@ class JaxGraphReachAvoidSequence(NamedTuple):
                         edge_offset + r_recv.shape[0] : edge_offset + max_edges
                     ] = node_offset
 
-                    all_reach_n_node[flat_idx] = r_n_node
-                    all_reach_n_edge[flat_idx] = r_n_edge
-
                     # --- Process Avoid Graph ---
-                    a_nodes, a_send, a_recv, a_n_node, a_n_edge = _convert_to_arrays(
-                        a_graph_root, env.propositions, max_nodes, max_edges
+                    a_nodes, a_edges, a_send, a_recv, a_n_node, a_n_edge = (
+                        _convert_to_arrays(
+                            a_graph_root, env.propositions, max_nodes, max_edges
+                        )
                     )
                     for key in all_avoid_nodes:
                         all_avoid_nodes[key][
                             node_offset : node_offset + a_nodes[key].shape[0]
                         ] = a_nodes[key]
+                    for key in all_avoid_edges:
+                        all_avoid_edges[key][edge_offset : edge_offset + a_n_edge] = (
+                            a_edges[key]
+                        )
                     all_avoid_senders[edge_offset : edge_offset + a_send.shape[0]] = (
                         a_send + node_offset
                     )
@@ -418,27 +448,24 @@ class JaxGraphReachAvoidSequence(NamedTuple):
                         edge_offset + a_recv.shape[0] : edge_offset + max_edges
                     ] = node_offset
 
-                    all_avoid_n_node[flat_idx] = a_n_node
-                    all_avoid_n_edge[flat_idx] = a_n_edge
-
         # Reshape n_node/n_edge to have batch dimensions
         batch_shape = (num_states, max_seqs, max_len)
         reach_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(
                 lambda x: x.reshape(total_nodes), all_reach_nodes
             ),  # Flatten to 1D
+            edges=jax.tree.map(lambda x: x.reshape(total_edges), all_reach_edges),
             senders=all_reach_senders,
             receivers=all_reach_receivers,
-            edges=None,
             n_node=all_reach_n_node.reshape(batch_shape),
             n_edge=all_reach_n_edge.reshape(batch_shape),
             globals=None,
         )
         avoid_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(total_nodes), all_avoid_nodes),
+            edges=jax.tree.map(lambda x: x.reshape(total_edges), all_avoid_edges),
             senders=all_avoid_senders,
             receivers=all_avoid_receivers,
-            edges=None,
             n_node=all_avoid_n_node.reshape(batch_shape),
             n_edge=all_avoid_n_edge.reshape(batch_shape),
             globals=None,
@@ -466,12 +493,14 @@ def _convert_to_arrays(
         nodes = {
             "type_idx": np.array([], dtype=np.int32).reshape(0, 1),
             "prop_idx": np.array([], dtype=np.int32).reshape(0, 1),
+            "mask": np.array([], dtype=np.bool_).reshape(0, 1),
         }
+        edges = {"mask": np.array([], dtype=np.bool_).reshape(0, 1)}
         senders = np.array([], dtype=np.int32)
         receivers = np.array([], dtype=np.int32)
         n_node = np.array(0)
         n_edge = np.array(0)
-        return nodes, senders, receivers, n_node, n_edge
+        return nodes, edges, senders, receivers, n_node, n_edge
 
     node_map: dict[Node | EpsilonType, int] = {}
     node_features: list[list[int]] = []
@@ -519,13 +548,16 @@ def _convert_to_arrays(
     # Create node feature arrays (unpadded)
     type_arr = -np.ones((num_nodes, 1), dtype=np.int32)
     prop_arr = -np.ones((num_nodes, 1), dtype=np.int32)
+    node_mask_arr = np.zeros((num_nodes, 1), dtype=np.bool_)
 
     if num_nodes > 0:
         features_arr = np.array(node_features, dtype=np.int32)
         type_arr[:, 0] = features_arr[:, 0]
         prop_arr[:, 0] = features_arr[:, 1]
+        node_mask_arr[:, 0] = True
 
-    nodes = {"type_idx": type_arr, "prop_idx": prop_arr}
+    nodes = {"type_idx": type_arr, "prop_idx": prop_arr, "mask": node_mask_arr}
+    edges = {"mask": np.ones((num_edges, 1), dtype=np.bool_)}
 
     # Create edge arrays (unpadded)
     senders_arr = np.array(senders, dtype=np.int32)
@@ -533,6 +565,7 @@ def _convert_to_arrays(
 
     return (
         nodes,
+        edges,
         senders_arr,
         receivers_arr,
         np.array(num_nodes),
