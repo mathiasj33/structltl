@@ -14,10 +14,17 @@ class GraphSequenceSampler(eqx.Module):
 
     propositions: tuple[str, ...]
     assignments: tuple[Assignment, ...]
+    max_length: int
 
-    def __init__(self, propositions: Sequence[str], assignments: Sequence[Assignment]):
+    def __init__(
+        self,
+        propositions: Sequence[str],
+        assignments: Sequence[Assignment],
+        max_length: int,
+    ):
         self.propositions = tuple(propositions)
         self.assignments = tuple(assignments)
+        self.max_length = max_length
 
     def sample(self, key: jax.Array) -> GraphReachAvoidSequence:
         raise NotImplementedError

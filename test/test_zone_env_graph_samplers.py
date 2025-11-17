@@ -42,6 +42,7 @@ def test_graph_reach_avoid_sampler():
         avoid=(0, 3),
         propositions=env.propositions,
         assignments=env.assignments,
+        max_length=3,
     )
     key = jax.random.key(0)
 
@@ -59,6 +60,9 @@ def test_graph_reach_avoid_sampler():
         # Check sequence length
         assert sampler.depth[0] <= len(seq.reach_avoid_graphs) <= sampler.depth[1]
         assert len(seq.reach_avoid_graphs) == len(seq.reach_avoid_assignments)
+
+        assert len(seq.reach_avoid_graphs) == 3
+        assert len(seq.reach_avoid_assignments) == 3
 
         used_props = set()
         for i in range(len(seq.reach_avoid_graphs)):
@@ -119,6 +123,7 @@ def test_graph_reach_stay_sampler():
         avoid=(0, 3),
         propositions=env.propositions,
         assignments=env.assignments,
+        max_length=3,
     )
     key = jax.random.key(42)
 
@@ -134,7 +139,8 @@ def test_graph_reach_stay_sampler():
                 print(f"  Step {i}: Reach={rg}, Avoid={ag}")
 
         # Check sequence structure
-        assert len(seq.reach_avoid_graphs) == 2
+        assert len(seq.reach_avoid_graphs) == 3
+        assert len(seq.reach_avoid_assignments) == 3
         assert seq.repeat_last == sampler.num_stay
 
         # --- Check Step 0 (Initial Avoid) ---

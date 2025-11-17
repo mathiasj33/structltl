@@ -36,9 +36,13 @@ def test_graph_construction():
 
     print(graph)
 
+    # Batching
+
     two_graph_graphstuple = jraph.batch([graph, graph])
 
     print(two_graph_graphstuple)
+
+    # Different sets of features as a PyTree
 
     node_targets = jnp.array([[True], [False], [True]])
     graph = graph._replace(nodes={"inputs": graph.nodes, "targets": node_targets})

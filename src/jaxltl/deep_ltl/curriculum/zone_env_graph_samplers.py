@@ -49,8 +49,9 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
         *,
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
+        max_length: int,
     ):
-        super().__init__(propositions, assignments)
+        super().__init__(propositions, assignments, max_length)
         if isinstance(depth, int):
             depth = (depth, depth)
         if isinstance(reach, int):
@@ -107,6 +108,14 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
             reach_avoid_graphs.append((reach_graph, avoid_graph))
             reach_avoid_assignments.append((reach_assigns, avoid_assigns))
 
+        # Pad to max_length
+        num_padding = self.max_length - len(reach_avoid_graphs)
+        if num_padding > 0:
+            padding_assignments = (frozenset(), frozenset())
+            padding_graphs = (None, None)
+            reach_avoid_assignments.extend([padding_assignments] * num_padding)
+            reach_avoid_graphs.extend([padding_graphs] * num_padding)
+
         return GraphReachAvoidSequence(reach_avoid_assignments, reach_avoid_graphs)
 
 
@@ -123,8 +132,9 @@ class GraphZoneReachStaySampler(GraphSequenceSampler):
         *,
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
+        max_length: int,
     ):
-        super().__init__(propositions, assignments)
+        super().__init__(propositions, assignments, max_length)
         if isinstance(avoid, int):
             avoid = (avoid, avoid)
         self.avoid = avoid
@@ -167,6 +177,19 @@ class GraphZoneReachStaySampler(GraphSequenceSampler):
             (EPSILON, initial_avoid_assigns),
             (reach_assigns, stay_avoid_assigns),
         ]
+
+        # Add a second stay step if there is space
+        if self.max_length > 2:
+            reach_avoid_graphs.append((reach_graph, stay_avoid_graph))
+            reach_avoid_assignments.append((reach_assigns, stay_avoid_assigns))
+
+        # Pad to max_length
+        num_padding = self.max_length - len(reach_avoid_graphs)
+        if num_padding > 0:
+            padding_assignments = (frozenset(), frozenset())
+            padding_graphs = (None, None)
+            reach_avoid_assignments.extend([padding_assignments] * num_padding)
+            reach_avoid_graphs.extend([padding_graphs] * num_padding)
 
         return GraphReachAvoidSequence(
             reach_avoid_assignments, reach_avoid_graphs, repeat_last=self.num_stay
