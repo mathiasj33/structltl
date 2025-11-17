@@ -59,15 +59,15 @@ def test_graph_reach_avoid_sampler():
 
         # Check sequence length
         assert sampler.depth[0] <= len(seq.reach_avoid_graphs) <= sampler.depth[1]
-        assert len(seq.reach_avoid_graphs) == len(seq.reach_avoid_assignments)
+        assert len(seq.reach_avoid_graphs) == len(seq.reach_avoid)
 
         assert len(seq.reach_avoid_graphs) == 3
-        assert len(seq.reach_avoid_assignments) == 3
+        assert len(seq.reach_avoid) == 3
 
         used_props = set()
         for i in range(len(seq.reach_avoid_graphs)):
             reach_graph, avoid_graph = seq.reach_avoid_graphs[i]
-            reach_assigns, avoid_assigns = seq.reach_avoid_assignments[i]
+            reach_assigns, avoid_assigns = seq.reach_avoid[i]
 
             # --- Graph Checks ---
             reach_props = get_props_from_graph(reach_graph)
@@ -140,12 +140,12 @@ def test_graph_reach_stay_sampler():
 
         # Check sequence structure
         assert len(seq.reach_avoid_graphs) == 3
-        assert len(seq.reach_avoid_assignments) == 3
+        assert len(seq.reach_avoid) == 3
         assert seq.repeat_last == sampler.num_stay
 
         # --- Check Step 0 (Initial Avoid) ---
         reach_graph_0, avoid_graph_0 = seq.reach_avoid_graphs[0]
-        reach_assigns_0, avoid_assigns_0 = seq.reach_avoid_assignments[0]
+        reach_assigns_0, avoid_assigns_0 = seq.reach_avoid[0]
 
         assert reach_graph_0 is EPSILON
         assert reach_assigns_0 is EPSILON
@@ -160,7 +160,7 @@ def test_graph_reach_stay_sampler():
 
         # --- Check Step 1 (Reach and Stay) ---
         reach_graph_1, avoid_graph_1 = seq.reach_avoid_graphs[1]
-        reach_assigns_1, avoid_assigns_1 = seq.reach_avoid_assignments[1]
+        reach_assigns_1, avoid_assigns_1 = seq.reach_avoid[1]
 
         # Check reach graph is a single proposition
         assert isinstance(reach_graph_1, VarNode)

@@ -38,11 +38,11 @@ def test_sampler_to_jax_and_advance():
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
             print(f"Assignments: {graph_seq}")
             print("\n--- Initial JAX Assignments (Reach) ---")
-            print(jax_seq.reach_assignments)
+            print(jax_seq.reach)
             print("\n--- Initial JAX Graph (Reach) ---")
             print(jax_seq.reach_graphs)
             print("\n--- Initial JAX Assignments (Avoid) ---")
-            print(jax_seq.avoid_assignments)
+            print(jax_seq.avoid)
             print("\n--- Initial JAX Graph (Avoid) ---")
             print(jax_seq.avoid_graphs)
 
@@ -51,11 +51,11 @@ def test_sampler_to_jax_and_advance():
 
         if j < 5:
             print("\n--- Advanced JAX Assignments (Reach) ---")
-            print(advanced_seq.reach_assignments)
+            print(advanced_seq.reach)
             print("\n--- Advanced JAX Graph (Reach) ---")
             print(advanced_seq.reach_graphs)
             print("\n--- Advanced JAX Assignments (Avoid) ---")
-            print(advanced_seq.avoid_assignments)
+            print(advanced_seq.avoid)
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
 
@@ -85,11 +85,11 @@ def test_reach_stay_sampler_to_jax_and_advance():
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
             print(f"Assignments: {graph_seq}")
             print("\n--- Initial JAX Assignments (Reach) ---")
-            print(jax_seq.reach_assignments)
+            print(jax_seq.reach)
             print("\n--- Initial JAX Graph (Reach) ---")
             print(jax_seq.reach_graphs)
             print("\n--- Initial JAX Assignments (Avoid) ---")
-            print(jax_seq.avoid_assignments)
+            print(jax_seq.avoid)
             print("\n--- Initial JAX Graph (Avoid) ---")
             print(jax_seq.avoid_graphs)
 
@@ -98,11 +98,11 @@ def test_reach_stay_sampler_to_jax_and_advance():
 
         if j < 5:
             print("\n--- Advanced JAX Assignments (Reach) ---")
-            print(advanced_seq.reach_assignments)
+            print(advanced_seq.reach)
             print("\n--- Advanced JAX Graph (Reach) ---")
             print(advanced_seq.reach_graphs)
             print("\n--- Advanced JAX Assignments (Avoid) ---")
-            print(advanced_seq.avoid_assignments)
+            print(advanced_seq.avoid)
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
 
@@ -138,10 +138,10 @@ def test_batch_to_jax_and_advance():
     print("\n\n--- Batched Reach-Avoid Sample ---")
     print(f"Assignments: {graph_seq}")
     print("\n--- Initial JAX Assignments (Reach) ---")
-    print(jax_seq.reach_assignments)
+    print(jax_seq.reach)
     print("\n--- Initial JAX Graph (Reach) ---")
     print(jax_seq.reach_graphs)
     print("\n--- Initial JAX Assignments (Avoid) ---")
-    print(jax_seq.avoid_assignments)
+    print(jax_seq.avoid)
     print("\n--- Initial JAX Graph (Avoid) ---")
     print(jax_seq.avoid_graphs)

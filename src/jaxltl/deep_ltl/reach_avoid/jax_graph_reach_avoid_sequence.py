@@ -95,8 +95,8 @@ class JaxGraphReachAvoidSequence(NamedTuple):
     """Jax representation of a reach-avoid sequence with assignments and graphs."""
 
     # Assignment-based representation
-    reach_assignments: jax.Array  # shape: (..., max_length, num_assignments)
-    avoid_assignments: jax.Array  # shape: (..., max_length, num_assignments)
+    reach: jax.Array  # shape: (..., max_length, num_assignments)
+    avoid: jax.Array  # shape: (..., max_length, num_assignments)
 
     # Graph-based representation
     reach_graphs: jraph.GraphsTuple
@@ -126,8 +126,8 @@ class JaxGraphReachAvoidSequence(NamedTuple):
 
         def _advance_step(self_seq: "JaxGraphReachAvoidSequence"):
             # Advance assignment arrays one step
-            new_reach = jnp.roll(self_seq.reach_assignments, -1, axis=-2)
-            new_avoid = jnp.roll(self_seq.avoid_assignments, -1, axis=-2)
+            new_reach = jnp.roll(self_seq.reach, -1, axis=-2)
+            new_avoid = jnp.roll(self_seq.avoid, -1, axis=-2)
 
             # Pad the last row with -1s
             new_reach = new_reach.at[-1, :].set(-1)
@@ -138,8 +138,8 @@ class JaxGraphReachAvoidSequence(NamedTuple):
             new_avoid_graphs = _roll_graphs(self_seq.avoid_graphs)
 
             return JaxGraphReachAvoidSequence(
-                reach_assignments=new_reach,
-                avoid_assignments=new_avoid,
+                reach=new_reach,
+                avoid=new_avoid,
                 reach_graphs=new_reach_graphs,
                 avoid_graphs=new_avoid_graphs,
                 repeat_last=self_seq.repeat_last,
@@ -157,7 +157,7 @@ class JaxGraphReachAvoidSequence(NamedTuple):
     def depth(self) -> jax.Array:
         """Compute the depth of the sequence (number of non-padded steps)."""
         # Depth is determined by the assignment sequence
-        padded_steps = self.reach_assignments[..., 0] == -1
+        padded_steps = self.reach[..., 0] == -1
         return jnp.sum(~padded_steps, axis=-1)
 
     @classmethod
@@ -171,7 +171,7 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         """
         Converts a single GraphReachAvoidSequence into a batched Jax representation.
         """
-        seq_len = len(seq.reach_avoid_assignments)
+        seq_len = len(seq.reach_avoid)
 
         # --- Pre-computation for efficiency ---
         assignment_map = {name: i for i, name in enumerate(env.assignments)}
@@ -181,7 +181,7 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         reach_assign = -np.ones((seq_len, len(env.assignments)), dtype=np.int32)
         avoid_assign = -np.ones_like(reach_assign)
 
-        for t_idx, (r, a) in enumerate(seq.reach_avoid_assignments):
+        for t_idx, (r, a) in enumerate(seq.reach_avoid):
             if isinstance(r, EpsilonType):
                 reach_assign[t_idx, 0] = epsilon_idx
             else:
@@ -284,8 +284,8 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         )
 
         return cls(
-            reach_assignments=jnp.array(reach_assign),
-            avoid_assignments=jnp.array(avoid_assign),
+            reach=jnp.array(reach_assign),
+            avoid=jnp.array(avoid_assign),
             reach_graphs=reach_graphs,
             avoid_graphs=avoid_graphs,
             repeat_last=jnp.array(seq.repeat_last, dtype=jnp.int32),
@@ -307,11 +307,7 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         num_states = len(state_to_seqs)
         max_seqs = max((len(seqs) for seqs in state_to_seqs.values()), default=0)
         max_len = max(
-            (
-                len(s.reach_avoid_assignments)
-                for seqs in state_to_seqs.values()
-                for s in seqs
-            ),
+            (len(s.reach_avoid) for seqs in state_to_seqs.values() for s in seqs),
             default=0,
         )
 
@@ -327,7 +323,7 @@ class JaxGraphReachAvoidSequence(NamedTuple):
 
         for state, seqs in state_to_seqs.items():
             for s_idx, seq in enumerate(seqs):
-                for t_idx, (r, a) in enumerate(seq.reach_avoid_assignments):
+                for t_idx, (r, a) in enumerate(seq.reach_avoid):
                     if isinstance(r, EpsilonType):
                         reach_assign[state, s_idx, t_idx, 0] = epsilon_idx
                     else:
@@ -449,8 +445,8 @@ class JaxGraphReachAvoidSequence(NamedTuple):
         )
 
         return cls(
-            reach_assignments=jnp.array(reach_assign),
-            avoid_assignments=jnp.array(avoid_assign),
+            reach=jnp.array(reach_assign),
+            avoid=jnp.array(avoid_assign),
             reach_graphs=reach_graphs,
             avoid_graphs=avoid_graphs,
             repeat_last=jnp.ones((num_states, max_seqs), dtype=jnp.int32),
