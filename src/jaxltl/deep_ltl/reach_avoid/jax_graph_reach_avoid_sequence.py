@@ -1,5 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import replace
+from typing import TypedDict, cast
 
 import equinox as eqx
 import jax
@@ -31,7 +32,16 @@ NODE_TYPE_OR = 1
 NODE_TYPE_NOT = 2
 NODE_TYPE_EMPTY = 3
 NODE_TYPE_EPSILON = 4
-NODE_TYPE_VAR = 5
+
+
+class NodeData(TypedDict):
+    prop_idx: jax.Array
+    type_idx: jax.Array
+    mask: jax.Array
+
+
+class EdgeData(TypedDict):
+    mask: jax.Array
 
 
 def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
@@ -40,8 +50,13 @@ def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
     seq_len = graphs.n_node.shape[0]
 
     # Infer max_nodes and max_edges from the total size and sequence length.
-    total_nodes = graphs.nodes["type_idx"].shape[0]
-    total_edges = graphs.senders.shape[0]
+    nodes = cast(NodeData, graphs.nodes)
+    edges = cast(EdgeData, graphs.edges)
+    senders = cast(jax.Array, graphs.senders)
+    receivers = cast(jax.Array, graphs.receivers)
+
+    total_nodes = nodes["type_idx"].shape[0]
+    total_edges = senders.shape[0]
 
     max_nodes = total_nodes // seq_len
     max_edges = total_edges // seq_len
@@ -53,10 +68,10 @@ def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
     # rolled_n_edge = jnp.roll(graphs.n_edge, -1, axis=-1)
 
     # 2. Roll the flattened node and edge arrays by one block.
-    rolled_nodes = jax.tree.map(lambda x: jnp.roll(x, -max_nodes, axis=0), graphs.nodes)
-    rolled_edges = jax.tree.map(lambda x: jnp.roll(x, -max_edges, axis=0), graphs.edges)
-    rolled_senders = jnp.roll(graphs.senders, -max_edges, axis=0)
-    rolled_receivers = jnp.roll(graphs.receivers, -max_edges, axis=0)
+    rolled_nodes = jax.tree.map(lambda x: jnp.roll(x, -max_nodes, axis=0), nodes)
+    rolled_edges = jax.tree.map(lambda x: jnp.roll(x, -max_edges, axis=0), edges)
+    rolled_senders = jnp.roll(senders, -max_edges, axis=0)
+    rolled_receivers = jnp.roll(receivers, -max_edges, axis=0)
 
     # 3. Pad the last step of the sequence.
     # Pad nodes
@@ -221,14 +236,10 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
             r_nodes, r_edges, r_send, r_recv, r_n_node, r_n_edge = _convert_to_arrays(
                 r_graph_root, env.propositions, max_nodes, max_edges
             )
-            for key in all_reach_nodes:
-                all_reach_nodes[key][
-                    node_offset : node_offset + r_nodes[key].shape[0]
-                ] = r_nodes[key]
-            for key in all_reach_edges:
-                all_reach_edges[key][edge_offset : edge_offset + r_n_edge] = r_edges[
-                    key
-                ]
+            for key, nodes in all_reach_nodes.items():
+                nodes[node_offset : node_offset + r_nodes[key].shape[0]] = r_nodes[key]
+            for key, edges in all_reach_edges.items():
+                edges[edge_offset : edge_offset + r_n_edge] = r_edges[key]
             all_reach_senders[edge_offset : edge_offset + r_send.shape[0]] = (
                 r_send + node_offset
             )
@@ -271,19 +282,19 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
         reach_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(-1), all_reach_nodes),
             edges=jax.tree.map(lambda x: x.reshape(-1), all_reach_edges),
-            senders=all_reach_senders,
-            receivers=all_reach_receivers,
-            n_node=all_reach_n_node,
-            n_edge=all_reach_n_edge,
+            senders=all_reach_senders,  # type: ignore[operator]
+            receivers=all_reach_receivers,  # type: ignore[operator]
+            n_node=all_reach_n_node,  # type: ignore[operator]
+            n_edge=all_reach_n_edge,  # type: ignore[operator]
             globals=None,
         )
         avoid_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(-1), all_avoid_nodes),
             edges=jax.tree.map(lambda x: x.reshape(-1), all_avoid_edges),
-            senders=all_avoid_senders,
-            receivers=all_avoid_receivers,
-            n_node=all_avoid_n_node,
-            n_edge=all_avoid_n_edge,
+            senders=all_avoid_senders,  # type: ignore[operator]
+            receivers=all_avoid_receivers,  # type: ignore[operator]
+            n_node=all_avoid_n_node,  # type: ignore[operator]
+            n_edge=all_avoid_n_edge,  # type: ignore[operator]
             globals=None,
         )
 
@@ -384,14 +395,12 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
                         )
                     )
                     # Place into flat arrays
-                    for key in all_reach_nodes:
-                        all_reach_nodes[key][
-                            node_offset : node_offset + r_nodes[key].shape[0]
-                        ] = r_nodes[key]
-                    for key in all_reach_edges:
-                        all_reach_edges[key][edge_offset : edge_offset + r_n_edge] = (
-                            r_edges[key]
+                    for key, nodes in all_reach_nodes.items():
+                        nodes[node_offset : node_offset + r_nodes[key].shape[0]] = (
+                            r_nodes[key]
                         )
+                    for key, edges in all_reach_edges.items():
+                        edges[edge_offset : edge_offset + r_n_edge] = r_edges[key]
                     # Add node_offset to local indices to make them global
                     all_reach_senders[edge_offset : edge_offset + r_send.shape[0]] = (
                         r_send + node_offset
@@ -441,19 +450,19 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
                 lambda x: x.reshape(total_nodes), all_reach_nodes
             ),  # Flatten to 1D
             edges=jax.tree.map(lambda x: x.reshape(total_edges), all_reach_edges),
-            senders=all_reach_senders,
-            receivers=all_reach_receivers,
-            n_node=all_reach_n_node.reshape(batch_shape),
-            n_edge=all_reach_n_edge.reshape(batch_shape),
+            senders=all_reach_senders,  # type: ignore[operator]
+            receivers=all_reach_receivers,  # type: ignore[operator]
+            n_node=all_reach_n_node.reshape(batch_shape),  # type: ignore[operator]
+            n_edge=all_reach_n_edge.reshape(batch_shape),  # type: ignore[operator]
             globals=None,
         )
         avoid_graphs = jraph.GraphsTuple(
             nodes=jax.tree.map(lambda x: x.reshape(total_nodes), all_avoid_nodes),
             edges=jax.tree.map(lambda x: x.reshape(total_edges), all_avoid_edges),
-            senders=all_avoid_senders,
-            receivers=all_avoid_receivers,
-            n_node=all_avoid_n_node.reshape(batch_shape),
-            n_edge=all_avoid_n_edge.reshape(batch_shape),
+            senders=all_avoid_senders,  # type: ignore[operator]
+            receivers=all_avoid_receivers,  # type: ignore[operator]
+            n_node=all_avoid_n_node.reshape(batch_shape),  # type: ignore[operator]
+            n_edge=all_avoid_n_edge.reshape(batch_shape),  # type: ignore[operator]
             globals=None,
         )
 
@@ -517,7 +526,7 @@ def _convert_to_arrays(
 
         return parent_idx
 
-    root_idx = build_graph(graph_root)
+    _ = build_graph(graph_root)
 
     num_nodes = len(node_features)
     num_edges = len(senders)
@@ -564,12 +573,13 @@ def _get_node_features_as_int(
 ) -> list[int]:
     """Creates an integer feature vector for a graph node.
     Returns:
-        A list of two integers: [node_type_id, proposition_id].
-        proposition_id is -1 for non-variable nodes.
+        A list of two integers: [type_id, prop_id].
+        type_id is -1 for non-special nodes.
+        prop_id is -1 for non-proposition nodes.
     """
     prop_id = -1
     if isinstance(node, VarNode):
-        node_type_id = NODE_TYPE_VAR
+        type_id = -1
         try:
             prop_id = propositions.index(node.name)
         except ValueError as err:
@@ -577,16 +587,16 @@ def _get_node_features_as_int(
                 f"Proposition '{node.name}' not in environment propositions."
             ) from err
     elif isinstance(node, AndNode | MultiAndNode):
-        node_type_id = NODE_TYPE_AND
+        type_id = NODE_TYPE_AND
     elif isinstance(node, OrNode | MultiOrNode):
-        node_type_id = NODE_TYPE_OR
+        type_id = NODE_TYPE_OR
     elif isinstance(node, NotNode):
-        node_type_id = NODE_TYPE_NOT
+        type_id = NODE_TYPE_NOT
     elif isinstance(node, EmptyNode):
-        node_type_id = NODE_TYPE_EMPTY
+        type_id = NODE_TYPE_EMPTY
     elif isinstance(node, EpsilonType):
-        node_type_id = NODE_TYPE_EPSILON
+        type_id = NODE_TYPE_EPSILON
     else:
         raise TypeError(f"Unknown node type for featurization: {type(node)}")
 
-    return [node_type_id, prop_id]
+    return [type_id, prop_id]
