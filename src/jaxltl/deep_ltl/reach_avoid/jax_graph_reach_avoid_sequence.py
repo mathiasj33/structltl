@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import NamedTuple
+from dataclasses import replace
 
 import equinox as eqx
 import jax
@@ -10,6 +10,7 @@ import numpy as np
 from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
     GraphReachAvoidSequence,
 )
+from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EpsilonType
 from jaxltl.environments.environment import Environment
 from jaxltl.environments.wrappers.wrapper import EnvWrapper
@@ -102,19 +103,12 @@ def _roll_graphs(graphs: jraph.GraphsTuple) -> jraph.GraphsTuple:
     )
 
 
-class JaxGraphReachAvoidSequence(NamedTuple):
+class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
     """Jax representation of a reach-avoid sequence with assignments and graphs."""
-
-    # Assignment-based representation
-    reach: jax.Array  # shape: (..., max_length, num_assignments)
-    avoid: jax.Array  # shape: (..., max_length, num_assignments)
 
     # Graph-based representation
     reach_graphs: jraph.GraphsTuple
     avoid_graphs: jraph.GraphsTuple
-
-    repeat_last: jax.Array
-    last_index: jax.Array
 
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
@@ -132,44 +126,36 @@ class JaxGraphReachAvoidSequence(NamedTuple):
             is_last_step, self.last_index + 1 < self.repeat_last
         )
 
-        def _repeat_step(self_seq: "JaxGraphReachAvoidSequence"):
-            return self_seq._replace(last_index=self_seq.last_index + 1)
+        def _repeat_step():
+            return replace(self, last_index=self.last_index + 1)
 
-        def _advance_step(self_seq: "JaxGraphReachAvoidSequence"):
+        def _advance_step():
             # Advance assignment arrays one step
-            new_reach = jnp.roll(self_seq.reach, -1, axis=-2)
-            new_avoid = jnp.roll(self_seq.avoid, -1, axis=-2)
+            new_reach = jnp.roll(self.reach, -1, axis=-2)
+            new_avoid = jnp.roll(self.avoid, -1, axis=-2)
 
             # Pad the last row with -1s
             new_reach = new_reach.at[-1, :].set(-1)
             new_avoid = new_avoid.at[-1, :].set(-1)
 
             # Advance graph arrays one step
-            new_reach_graphs = _roll_graphs(self_seq.reach_graphs)
-            new_avoid_graphs = _roll_graphs(self_seq.avoid_graphs)
+            new_reach_graphs = _roll_graphs(self.reach_graphs)
+            new_avoid_graphs = _roll_graphs(self.avoid_graphs)
 
             return JaxGraphReachAvoidSequence(
                 reach=new_reach,
                 avoid=new_avoid,
                 reach_graphs=new_reach_graphs,
                 avoid_graphs=new_avoid_graphs,
-                repeat_last=self_seq.repeat_last,
-                last_index=jnp.zeros_like(self_seq.last_index),
+                repeat_last=self.repeat_last,
+                last_index=jnp.zeros_like(self.last_index),
             )
 
         return jax.lax.cond(
             jnp.all(should_repeat),
             _repeat_step,
             _advance_step,
-            self,
         )
-
-    @property
-    def depth(self) -> jax.Array:
-        """Compute the depth of the sequence (number of non-padded steps)."""
-        # Depth is determined by the assignment sequence
-        padded_steps = self.reach[..., 0] == -1
-        return jnp.sum(~padded_steps, axis=-1)
 
     @classmethod
     def from_seq(

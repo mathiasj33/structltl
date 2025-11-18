@@ -12,7 +12,7 @@ curriculum_wrapper:
   episode_window: 512
 
 model:
-  _target_: jaxltl.deep_ltl.model.model.DeepLTLModel
+  _target_: jaxltl.deep_ltl.model.deep_ltl.DeepLTLModel
   _recursive_: false
   env_net:
     _target_: jaxltl.networks.mlp.MLP

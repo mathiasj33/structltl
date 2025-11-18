@@ -1,5 +1,6 @@
-from typing import NamedTuple
+from dataclasses import KW_ONLY, field, replace
 
+import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -12,18 +13,26 @@ from jaxltl.environments.environment import Environment
 from jaxltl.environments.wrappers.wrapper import EnvWrapper
 
 
-class JaxReachAvoidSequence(NamedTuple):
+class JaxReachAvoidSequence(eqx.Module):
     """Jax representation of a reach-avoid sequence consisting of sets of assignments to reach and avoid."""
 
     # Each row consists of assignment indices with -1 padding. Epsilon transitions are
     # represented by an index of len(env.assignments) in the reach set.
     reach: jax.Array  # shape: (max_length, num_assignments)
     avoid: jax.Array  # shape: (max_length, num_assignments)
+
+    # Defaults go after this line
+    _: KW_ONLY
+
     # Indicates how often the last reach-avoid pair should be repeated. This is used to
     # specify long sequences (such as FG a) without increasing the size of the arrays.
-    repeat_last: jax.Array = jnp.ones((), dtype=jnp.int32)
+    repeat_last: jax.Array = field(
+        default_factory=lambda: jnp.ones((), dtype=jnp.int32)
+    )
     # counts how often advanced in last step
-    last_index: jax.Array = jnp.zeros((), dtype=jnp.int32)
+    last_index: jax.Array = field(
+        default_factory=lambda: jnp.zeros((), dtype=jnp.int32)
+    )
 
     def advance(self) -> "JaxReachAvoidSequence":
         """Advance the reach-avoid sequence by one step. Returns a new sequence, with
@@ -35,7 +44,7 @@ class JaxReachAvoidSequence(NamedTuple):
         )
 
         def _repeat_step():
-            return self._replace(last_index=self.last_index + 1)
+            return replace(self, last_index=self.last_index + 1)
 
         def _advance_step():
             # advance arrays one step
@@ -63,9 +72,9 @@ class JaxReachAvoidSequence(NamedTuple):
     @property
     def depth(self) -> jax.Array:
         """Compute the depth of the sequence (number of non-padded steps)."""
-
-        padded_steps = self.reach[:, 0] == -1
-        return jnp.sum(~padded_steps)
+        # Depth is determined by the assignment sequence
+        padded_steps = self.reach[..., 0] == -1
+        return jnp.sum(~padded_steps, axis=-1)
 
     @classmethod
     def from_state_to_seqs(

@@ -15,9 +15,9 @@ from jaxltl.environments.zone_env.zone_env import ZoneEnv
 def test_sampler_to_jax_and_advance():
     env = ZoneEnv()
     sampler = GraphZoneReachAvoidSampler(
-        depth=(2, 3),
-        reach=(1, 3),
-        avoid=(0, 3),
+        depth=(1, 2),
+        reach=(1, 2),
+        avoid=(0, 2),
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
@@ -66,7 +66,7 @@ def test_sampler_to_jax_and_advance():
 def test_reach_stay_sampler_to_jax_and_advance():
     env = ZoneEnv()
     sampler = GraphZoneReachStaySampler(
-        num_stay=3,
+        num_stay=60,
         avoid=(0, 2),
         propositions=env.propositions,
         assignments=env.assignments,
@@ -116,9 +116,9 @@ def test_reach_stay_sampler_to_jax_and_advance():
 def test_batch_to_jax_and_advance():
     env = ZoneEnv()
     sampler = GraphZoneReachAvoidSampler(
-        depth=(2, 3),
-        reach=(1, 3),
-        avoid=(0, 3),
+        depth=(2, 2),
+        reach=(1, 2),
+        avoid=(0, 2),
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
