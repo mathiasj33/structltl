@@ -2,14 +2,12 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 
-from jaxltl.deep_ltl.curriculum.curriculum import (
-    JaxReachAvoidSequence,
-    SequenceSampler,
-)
 from jaxltl.deep_ltl.curriculum.sampling_utils import sample_assignments
+from jaxltl.deep_ltl.curriculum.sequence_sampler import AssignmentSequenceSampler
+from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 
 
-class ZoneReachAvoidSampler(SequenceSampler):
+class ZoneReachAvoidSampler(AssignmentSequenceSampler):
     """Samples simple reach-avoid sequences.
 
     Note: we assume that the last assignment index corresponds to the empty assignment,
@@ -104,7 +102,7 @@ class ZoneReachAvoidSampler(SequenceSampler):
         return JaxReachAvoidSequence(reach=final_reach_seq, avoid=final_avoid_seq)
 
 
-class ZoneReachStaySampler(SequenceSampler):
+class ZoneReachStaySampler(AssignmentSequenceSampler):
     """Samples reach-stay sequences."""
 
     num_stay: jax.Array  # int32, the number of timesteps to stay after reaching

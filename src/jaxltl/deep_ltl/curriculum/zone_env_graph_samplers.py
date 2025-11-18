@@ -50,8 +50,10 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
         max_length: int,
+        max_nodes: int,
+        max_edges: int,
     ):
-        super().__init__(propositions, assignments, max_length)
+        super().__init__(propositions, assignments, max_length, max_nodes, max_edges)
         if isinstance(depth, int):
             depth = (depth, depth)
         if isinstance(reach, int):
@@ -62,7 +64,7 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
         self.reach = reach
         self.avoid = avoid
 
-    def sample(self, key: jax.Array) -> GraphReachAvoidSequence:
+    def sample_graph(self, key: jax.Array) -> GraphReachAvoidSequence:
         key, depth_key = jax.random.split(key)
         depth = jax.random.randint(depth_key, (), self.depth[0], self.depth[1] + 1)
 
@@ -133,14 +135,16 @@ class GraphZoneReachStaySampler(GraphSequenceSampler):
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
         max_length: int,
+        max_nodes: int,
+        max_edges: int,
     ):
-        super().__init__(propositions, assignments, max_length)
+        super().__init__(propositions, assignments, max_length, max_nodes, max_edges)
         if isinstance(avoid, int):
             avoid = (avoid, avoid)
         self.avoid = avoid
         self.num_stay = num_stay
 
-    def sample(self, key: jax.Array) -> GraphReachAvoidSequence:
+    def sample_graph(self, key: jax.Array) -> GraphReachAvoidSequence:
         reach_key, avoid_key = jax.random.split(key)
 
         # 1. Sample proposition to reach

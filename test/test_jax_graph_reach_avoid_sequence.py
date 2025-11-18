@@ -21,22 +21,17 @@ def test_sampler_to_jax_and_advance():
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
+        max_nodes=5,
+        max_edges=5,
     )
     key = jax.random.key(0)
 
     for j in range(50):
         key, subkey = jax.random.split(key)
-        graph_seq = sampler.sample(subkey)
-
-        # Convert to JAX version
-        max_nodes, max_edges = 10, 10
-        jax_seq = JaxGraphReachAvoidSequence.from_seq(
-            graph_seq, env, max_nodes, max_edges
-        )
+        jax_seq = sampler.sample(subkey)
 
         if j < 5:
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
-            print(f"Assignments: {graph_seq}")
             print("\n--- Initial JAX Assignments (Reach) ---")
             print(jax_seq.reach)
             print("\n--- Initial JAX Graph (Reach) ---")
@@ -71,22 +66,17 @@ def test_reach_stay_sampler_to_jax_and_advance():
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
+        max_nodes=5,
+        max_edges=5,
     )
     key = jax.random.key(42)
 
     for j in range(50):
         key, subkey = jax.random.split(key)
-        graph_seq = sampler.sample(subkey)
-
-        # Convert to JAX version
-        max_nodes, max_edges = 10, 10
-        jax_seq = JaxGraphReachAvoidSequence.from_seq(
-            graph_seq, env, max_nodes, max_edges
-        )
+        jax_seq = sampler.sample(subkey)
 
         if j < 5:
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
-            print(f"Assignments: {graph_seq}")
             print("\n--- Initial JAX Assignments (Reach) ---")
             print(jax_seq.reach)
             print("\n--- Initial JAX Graph (Reach) ---")
@@ -122,13 +112,15 @@ def test_batch_to_jax_and_advance():
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
+        max_nodes=5,
+        max_edges=5,
     )
     key = jax.random.key(0)
 
     graph_seqs = []
     for _ in range(6):
         key, subkey = jax.random.split(key)
-        graph_seq = sampler.sample(subkey)
+        graph_seq = sampler.sample_graph(subkey)
         graph_seqs.append(graph_seq)
 
     # Convert to JAX version
@@ -136,9 +128,9 @@ def test_batch_to_jax_and_advance():
         0: [graph_seqs[0], graph_seqs[1], graph_seqs[2]],
         1: [graph_seqs[3], graph_seqs[4], graph_seqs[5]],
     }
-    max_nodes, max_edges = 10, 10
+    max_nodes, max_edges = 5, 5
     jax_seq = JaxGraphReachAvoidSequence.from_state_to_seqs(
-        state_to_seqs, env, max_nodes, max_edges
+        state_to_seqs, env.propositions, env.assignments, max_nodes, max_edges
     )
 
     print("\n\n--- Batched Reach-Avoid Sample ---")

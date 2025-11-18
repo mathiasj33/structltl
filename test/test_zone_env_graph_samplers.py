@@ -43,12 +43,14 @@ def test_graph_reach_avoid_sampler():
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
+        max_nodes=5,
+        max_edges=5,
     )
     key = jax.random.key(0)
 
     for j in range(50):
         key, subkey = jax.random.split(key)
-        seq = sampler.sample(subkey)
+        seq = sampler.sample_graph(subkey)
 
         if j < 5:
             print(f"\n--- Reach-Avoid Sample {j + 1} ---")
@@ -124,12 +126,14 @@ def test_graph_reach_stay_sampler():
         propositions=env.propositions,
         assignments=env.assignments,
         max_length=3,
+        max_nodes=5,
+        max_edges=5,
     )
     key = jax.random.key(42)
 
     for j in range(50):
         key, subkey = jax.random.split(key)
-        seq = sampler.sample(subkey)
+        seq = sampler.sample_graph(subkey)
 
         if j < 5:
             print(f"\n--- Reach-Stay Sample {j + 1} ---")

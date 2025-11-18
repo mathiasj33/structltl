@@ -13,8 +13,7 @@ from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
 )
 from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EpsilonType
-from jaxltl.environments.environment import Environment
-from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.ltl.logic.assignment import Assignment
 from jaxltl.ltl.logic.boolean_parser import (
     AndNode,
     EmptyNode,
@@ -176,7 +175,8 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
     def from_seq(
         cls,
         seq: GraphReachAvoidSequence,
-        env: Environment | EnvWrapper,
+        propositions: Sequence[str],
+        assignments: Sequence[Assignment],
         max_nodes: int,
         max_edges: int,
     ) -> "JaxGraphReachAvoidSequence":
@@ -186,11 +186,11 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
         seq_len = len(seq.reach_avoid)
 
         # --- Pre-computation for efficiency ---
-        assignment_map = {name: i for i, name in enumerate(env.assignments)}
-        epsilon_idx = len(env.assignments)
+        assignment_map = {name: i for i, name in enumerate(assignments)}
+        epsilon_idx = len(assignments)
 
         # --- Assignment processing ---
-        reach_assign = -np.ones((seq_len, len(env.assignments)), dtype=np.int32)
+        reach_assign = -np.ones((seq_len, len(assignments)), dtype=np.int32)
         avoid_assign = -np.ones_like(reach_assign)
 
         for t_idx, (r, a) in enumerate(seq.reach_avoid):
@@ -234,7 +234,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
 
             # --- Process Reach Graph ---
             r_nodes, r_edges, r_send, r_recv, r_n_node, r_n_edge = _convert_to_arrays(
-                r_graph_root, env.propositions, max_nodes, max_edges
+                r_graph_root, propositions, max_nodes, max_edges
             )
             for key, nodes in all_reach_nodes.items():
                 nodes[node_offset : node_offset + r_nodes[key].shape[0]] = r_nodes[key]
@@ -255,7 +255,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
 
             # --- Process Avoid Graph ---
             a_nodes, a_edges, a_send, a_recv, a_n_node, a_n_edge = _convert_to_arrays(
-                a_graph_root, env.propositions, max_nodes, max_edges
+                a_graph_root, propositions, max_nodes, max_edges
             )
             for key in all_avoid_nodes:
                 all_avoid_nodes[key][
@@ -311,7 +311,8 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
     def from_state_to_seqs(
         cls,
         state_to_seqs: dict[int, list[GraphReachAvoidSequence]],
-        env: Environment | EnvWrapper,
+        propositions: Sequence[str],
+        assignments: Sequence[Assignment],
         max_nodes: int,
         max_edges: int,
     ) -> "JaxGraphReachAvoidSequence":
@@ -327,12 +328,12 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
         )
 
         # --- Pre-computation for efficiency ---
-        assignment_map = {name: i for i, name in enumerate(env.assignments)}
-        epsilon_idx = len(env.assignments)
+        assignment_map = {name: i for i, name in enumerate(assignments)}
+        epsilon_idx = len(assignments)
 
         # --- Assignment processing ---
         reach_assign = -np.ones(
-            (num_states, max_seqs, max_len, len(env.assignments)), dtype=np.int32
+            (num_states, max_seqs, max_len, len(assignments)), dtype=np.int32
         )
         avoid_assign = -np.ones_like(reach_assign)
 
@@ -391,7 +392,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
                     # --- Process Reach Graph ---
                     r_nodes, r_edges, r_send, r_recv, r_n_node, r_n_edge = (
                         _convert_to_arrays(
-                            r_graph_root, env.propositions, max_nodes, max_edges
+                            r_graph_root, propositions, max_nodes, max_edges
                         )
                     )
                     # Place into flat arrays
@@ -419,7 +420,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
                     # --- Process Avoid Graph ---
                     a_nodes, a_edges, a_send, a_recv, a_n_node, a_n_edge = (
                         _convert_to_arrays(
-                            a_graph_root, env.propositions, max_nodes, max_edges
+                            a_graph_root, propositions, max_nodes, max_edges
                         )
                     )
                     for key in all_avoid_nodes:
@@ -478,7 +479,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
 
 def _convert_to_arrays(
     graph_root: Node | EpsilonType | None,
-    propositions: tuple[str, ...],
+    propositions: Sequence[str],
     max_nodes: int,
     max_edges: int,
 ):
@@ -569,7 +570,7 @@ def _convert_to_arrays(
 
 
 def _get_node_features_as_int(
-    node: Node | EpsilonType, propositions: tuple[str, ...]
+    node: Node | EpsilonType, propositions: Sequence[str]
 ) -> list[int]:
     """Creates an integer feature vector for a graph node.
     Returns:
