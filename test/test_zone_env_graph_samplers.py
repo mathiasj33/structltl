@@ -6,6 +6,7 @@ from jaxltl.deep_ltl.curriculum.zone_env_graph_samplers import (
 )
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON, EpsilonType
 from jaxltl.environments.zone_env.zone_env import ZoneEnv
+from jaxltl.ltl.logic.assignment import Assignment
 from jaxltl.ltl.logic.boolean_parser import (
     AndNode,
     MultiAndNode,
@@ -14,6 +15,10 @@ from jaxltl.ltl.logic.boolean_parser import (
     OrNode,
     VarNode,
 )
+
+propositions = ZoneEnv.propositions
+assignments = [Assignment(frozenset({color})) for color in propositions]
+assignments.append(Assignment(frozenset()))  # empty assignment
 
 
 def get_props_from_graph(graph):
@@ -35,13 +40,12 @@ def get_props_from_graph(graph):
 
 
 def test_graph_reach_avoid_sampler():
-    env = ZoneEnv()
     sampler = GraphZoneReachAvoidSampler(
         depth=(1, 3),
         reach=(1, 3),
         avoid=(0, 3),
-        propositions=env.propositions,
-        assignments=env.assignments,
+        propositions=propositions,
+        assignments=assignments,
         max_length=3,
         max_nodes=5,
         max_edges=5,
@@ -107,24 +111,23 @@ def test_graph_reach_avoid_sampler():
 
             # Check that no other assignments satisfy the graphs
             if not isinstance(reach_assigns, EpsilonType):
-                other_assignments = set(env.assignments) - reach_assigns
+                other_assignments = set(assignments) - reach_assigns
                 for assignment in other_assignments:
                     if reach_graph is not None:
                         assert not reach_graph.eval(assignment)
 
-            other_assignments = set(env.assignments) - avoid_assigns
+            other_assignments = set(assignments) - avoid_assigns
             for assignment in other_assignments:
                 if avoid_graph is not None:
                     assert not avoid_graph.eval(assignment)
 
 
 def test_graph_reach_stay_sampler():
-    env = ZoneEnv()
     sampler = GraphZoneReachStaySampler(
         num_stay=60,
         avoid=(0, 3),
-        propositions=env.propositions,
-        assignments=env.assignments,
+        propositions=propositions,
+        assignments=assignments,
         max_length=3,
         max_nodes=5,
         max_edges=5,

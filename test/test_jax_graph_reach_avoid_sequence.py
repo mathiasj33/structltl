@@ -8,18 +8,23 @@ from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
     JaxGraphReachAvoidSequence,
 )
 from jaxltl.environments.zone_env.zone_env import ZoneEnv
+from jaxltl.ltl.logic.assignment import Assignment
+
+propositions = ZoneEnv.propositions
+assignments = [Assignment(frozenset({color})) for color in propositions]
+assignments.append(Assignment(frozenset()))  # empty assignment
+
 
 # TODO: Add assertions
 
 
 def test_sampler_to_jax_and_advance():
-    env = ZoneEnv()
     sampler = GraphZoneReachAvoidSampler(
         depth=(1, 2),
         reach=(1, 2),
         avoid=(0, 2),
-        propositions=env.propositions,
-        assignments=env.assignments,
+        propositions=propositions,
+        assignments=assignments,
         max_length=3,
         max_nodes=5,
         max_edges=5,
@@ -59,12 +64,11 @@ def test_sampler_to_jax_and_advance():
 
 
 def test_reach_stay_sampler_to_jax_and_advance():
-    env = ZoneEnv()
     sampler = GraphZoneReachStaySampler(
         num_stay=60,
         avoid=(0, 2),
-        propositions=env.propositions,
-        assignments=env.assignments,
+        propositions=propositions,
+        assignments=assignments,
         max_length=3,
         max_nodes=5,
         max_edges=5,
@@ -104,13 +108,12 @@ def test_reach_stay_sampler_to_jax_and_advance():
 
 
 def test_batch_to_jax_and_advance():
-    env = ZoneEnv()
     sampler = GraphZoneReachAvoidSampler(
         depth=(2, 2),
         reach=(1, 2),
         avoid=(0, 2),
-        propositions=env.propositions,
-        assignments=env.assignments,
+        propositions=propositions,
+        assignments=assignments,
         max_length=3,
         max_nodes=5,
         max_edges=5,
@@ -130,7 +133,7 @@ def test_batch_to_jax_and_advance():
     }
     max_nodes, max_edges = 5, 5
     jax_seq = JaxGraphReachAvoidSequence.from_state_to_seqs(
-        state_to_seqs, env.propositions, env.assignments, max_nodes, max_edges
+        state_to_seqs, propositions, assignments, max_nodes, max_edges
     )
 
     print("\n\n--- Batched Reach-Avoid Sample ---")
