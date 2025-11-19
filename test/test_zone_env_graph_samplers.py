@@ -4,6 +4,9 @@ from jaxltl.deep_ltl.curriculum.zone_env_graph_samplers import (
     GraphZoneReachAvoidSampler,
     GraphZoneReachStaySampler,
 )
+from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
+    GraphReachAvoidSequence,
+)
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON, EpsilonType
 from jaxltl.environments.zone_env.zone_env import ZoneEnv
 from jaxltl.ltl.logic.assignment import Assignment
@@ -42,6 +45,7 @@ def get_props_from_graph(graph):
 
 
 def test_graph_reach_avoid_sampler():
+    env = ZoneEnv()  # for reconstruction
     sampler = GraphZoneReachAvoidSampler(
         depth=(1, 3),
         reach=(1, 3),
@@ -57,12 +61,16 @@ def test_graph_reach_avoid_sampler():
     for j in range(50):
         key, subkey = jax.random.split(key)
         seq = sampler.sample_graph(subkey)
+        reconstructed_seq = GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
 
         if j < 5:
             print(f"\n--- Reach-Avoid Sample {j + 1} ---")
             print(f"Assignments: {seq}")
             print("Graphs:")
             for i, (rg, ag) in enumerate(seq.reach_avoid_graphs):
+                print(f"  Step {i}: Reach={rg}, Avoid={ag}")
+            print("Graphs Reconstructed from Assignment Sets:")
+            for i, (rg, ag) in enumerate(reconstructed_seq.reach_avoid_graphs):
                 print(f"  Step {i}: Reach={rg}, Avoid={ag}")
 
         # Check sequence length
@@ -125,6 +133,7 @@ def test_graph_reach_avoid_sampler():
 
 
 def test_graph_reach_stay_sampler():
+    env = ZoneEnv()  # for reconstruction
     sampler = GraphZoneReachStaySampler(
         num_stay=60,
         avoid=(0, 3),
@@ -139,12 +148,16 @@ def test_graph_reach_stay_sampler():
     for j in range(50):
         key, subkey = jax.random.split(key)
         seq = sampler.sample_graph(subkey)
+        reconstructed_seq = GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
 
         if j < 5:
             print(f"\n--- Reach-Stay Sample {j + 1} ---")
             print(f"Assignments: {seq}")
             print("Graphs:")
             for i, (rg, ag) in enumerate(seq.reach_avoid_graphs):
+                print(f"  Step {i}: Reach={rg}, Avoid={ag}")
+            print("Graphs Reconstructed from Assignment Sets:")
+            for i, (rg, ag) in enumerate(reconstructed_seq.reach_avoid_graphs):
                 print(f"  Step {i}: Reach={rg}, Avoid={ag}")
 
         # Check sequence structure

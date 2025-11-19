@@ -1,9 +1,16 @@
+from typing import TYPE_CHECKING
+
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import (
+    EPSILON,
     AssignmentSet,
     EpsilonType,
     ReachAvoidSequence,
 )
 from jaxltl.ltl.logic.boolean_parser import Node
+
+if TYPE_CHECKING:
+    from jaxltl.environments.environment import Environment
+    from jaxltl.environments.wrappers.wrapper import EnvWrapper
 
 
 class GraphReachAvoidSequence(ReachAvoidSequence):
@@ -25,6 +32,29 @@ class GraphReachAvoidSequence(ReachAvoidSequence):
         if len(reach_avoid) != len(reach_avoid_graphs):
             raise ValueError("Assignments and graphs lists must have the same length.")
         self.reach_avoid_graphs = tuple(reach_avoid_graphs)
+
+    @classmethod
+    def from_reach_avoid_sequence(
+        cls,
+        sequence: ReachAvoidSequence,
+        env: "Environment | EnvWrapper",
+    ) -> "GraphReachAvoidSequence":
+        """Creates a GraphReachAvoidSequence from a ReachAvoidSequence."""
+        reach_avoid_graphs = []
+        for reach_set, avoid_set in sequence.reach_avoid:
+            if isinstance(reach_set, EpsilonType):
+                reach_graph = EPSILON
+            else:
+                reach_graph = env.assignments_to_graph(reach_set)
+
+            avoid_graph = env.assignments_to_graph(avoid_set)
+            reach_avoid_graphs.append((reach_graph, avoid_graph))
+
+        return cls(
+            list(sequence.reach_avoid),
+            reach_avoid_graphs,
+            repeat_last=sequence.repeat_last,
+        )
 
     def __hash__(self):
         return hash((self.reach_avoid, self.reach_avoid_graphs, self.repeat_last))

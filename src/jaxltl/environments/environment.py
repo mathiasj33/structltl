@@ -13,6 +13,14 @@ import jax.numpy as jnp
 
 from jaxltl.environments.spaces import Space
 from jaxltl.ltl.logic.assignment import Assignment
+from jaxltl.ltl.logic.boolean_parser import (
+    EmptyNode,
+    MultiAndNode,
+    MultiOrNode,
+    Node,
+    NotNode,
+    VarNode,
+)
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -65,6 +73,7 @@ class Environment[
     # Maps indices in obs.propositions to names
     propositions: tuple[str, ...]
     assignments_array: jax.Array  # shape: (num_assignments, num_propositions) int32
+
     max_nodes: int  # max. nodes of boolean formula graphs for this environment
     max_edges: int  # max. edges of boolean formula graphs for this environment
 
@@ -72,8 +81,8 @@ class Environment[
         self,
         default_params: TEnvParams,
         propositions: tuple[str, ...],
-        max_nodes: int,
-        max_edges: int,
+        max_nodes: int = 5,
+        max_edges: int = 5,
     ):
         self.default_params = default_params
         self.propositions = propositions
@@ -225,6 +234,42 @@ class Environment[
         assignment = jnp.sort(assignment, descending=True)
         matches = jnp.all(self.assignments_array == assignment, axis=1)
         return jnp.argmax(matches)  # () int32
+
+    def _assignments_to_dnf(self, assignments: frozenset[Assignment]) -> Node | None:
+        """Converts a set of assignments to a boolean formula (graph) in DNF."""
+        if not assignments:
+            return None
+
+        assignment_conjuncts = []
+        for assignment in assignments:
+            literals = []
+            for prop in self.propositions:
+                if prop in assignment:
+                    literals.append(VarNode(prop))
+                else:
+                    literals.append(NotNode(VarNode(prop)))
+
+            if not literals:
+                assignment_conjuncts.append(EmptyNode())
+                continue
+            if len(literals) == 1:
+                assignment_conjuncts.append(literals[0])
+            else:
+                assignment_conjuncts.append(MultiAndNode(literals))
+
+        if not assignment_conjuncts:
+            return None
+        if len(assignment_conjuncts) == 1:
+            return assignment_conjuncts[0]
+        return MultiOrNode(assignment_conjuncts)
+
+    def assignments_to_graph(self, assignments: frozenset[Assignment]) -> Node | None:
+        """Converts a set of assignments to a boolean formula graph.
+
+        This base implementation creates a canonical DNF representation.
+        Environments can override this for a more simplified representation.
+        """
+        return self._assignments_to_dnf(assignments)
 
     def _compute_assignments_array(self) -> jax.Array:
         """Returns the possible assignments in the environment in array form.

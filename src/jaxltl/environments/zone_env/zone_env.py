@@ -19,6 +19,13 @@ from jax import lax
 from jaxltl.environments import environment, spaces
 from jaxltl.environments.zone_env.plotter import draw_trajectories
 from jaxltl.ltl.logic.assignment import Assignment
+from jaxltl.ltl.logic.boolean_parser import (
+    EmptyNode,
+    MultiOrNode,
+    Node,
+    NotNode,
+    VarNode,
+)
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -384,6 +391,42 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         assignments = [Assignment(frozenset({color})) for color in self.propositions]
         assignments.append(Assignment(frozenset()))  # empty assignment
         return assignments
+
+    @override
+    def assignments_to_graph(self, assignments: frozenset[Assignment]) -> Node | None:
+        """Converts a set of assignments to a simplified boolean formula graph for ZoneEnv."""
+        if not assignments:
+            return None
+
+        if assignments == {Assignment(frozenset())}:
+            return EmptyNode()
+
+        # Heuristic 1: Simple VarNode or MultiOrNode
+        props_in_set = []
+        is_simple_disjunction = True
+        for assign in assignments:
+            if len(assign.true_propositions) == 1:
+                props_in_set.append(list(assign.true_propositions)[0])
+            else:
+                is_simple_disjunction = False
+                break
+
+        if is_simple_disjunction:
+            if len(props_in_set) == 1:
+                return VarNode(props_in_set[0])
+            if len(props_in_set) > 1:
+                return MultiOrNode([VarNode(p) for p in sorted(props_in_set)])
+
+        # Heuristic 2: Simple NotNode
+        all_assignments = frozenset(self.assignments)
+        if len(assignments) == len(all_assignments) - 1:
+            missing_assignment = next(iter(all_assignments - assignments))
+            if len(missing_assignment.true_propositions) == 1:
+                prop = list(missing_assignment.true_propositions)[0]
+                return NotNode(VarNode(prop))
+
+        # Fallback to canonical DNF for complex cases
+        return self._assignments_to_dnf(assignments)
 
     @override
     def get_renderer(
