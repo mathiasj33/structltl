@@ -106,9 +106,9 @@ class LTLGNNModel(ActorCritic):
         return jnp.concatenate([x, emb], axis=-1)
 
     def _compute_sequence_embedding(self, seq: JaxGraphReachAvoidSequence) -> jax.Array:
-        # Vmap over the batch dimension of graphs
-        reach_root_features = jax.vmap(self._get_root_features)(seq.reach_graphs)
-        avoid_root_features = jax.vmap(self._get_root_features)(seq.avoid_graphs)
+        # Sequence of graphs is treated as one big graph, no vmap required
+        reach_root_features = self._get_root_features(seq.reach_graphs)
+        avoid_root_features = self._get_root_features(seq.avoid_graphs)
 
         reach_avoid = jnp.concatenate(
             [reach_root_features, avoid_root_features], axis=-1

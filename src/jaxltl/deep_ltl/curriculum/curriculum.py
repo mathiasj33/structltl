@@ -4,11 +4,20 @@ from typing import override
 import equinox as eqx
 import jax
 import jax.numpy as jnp
+from tqdm.auto import tqdm
 
-from jaxltl.deep_ltl.curriculum.sequence_sampler import (
-    JaxReachAvoidSequence,
-    SequenceSampler,
-)
+from jaxltl.deep_ltl.curriculum.graph_sequence_sampler import GraphSequenceSampler
+from jaxltl.deep_ltl.curriculum.sequence_sampler import SequenceSampler
+from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
+
+
+def _stage_uses_graph_sampler(stage: "CurriculumStage") -> bool:
+    """Checks if a curriculum stage uses a graph-based sampler."""
+    if isinstance(stage, RandomCurriculumStage):
+        return isinstance(stage.sampler, GraphSequenceSampler)
+    if isinstance(stage, MultiRandomStage):
+        return any(_stage_uses_graph_sampler(s) for s in stage.stages)
+    return False
 
 
 class CurriculumStage(eqx.Module):
@@ -100,7 +109,19 @@ class PrecomputedCurriculum(Curriculum):
         stage_keys = jax.random.split(key, len(stages))
         for i, stage in enumerate(stages):
             keys = jax.random.split(stage_keys[i], num_samples)
-            samples = jax.vmap(stage.sample)(keys)
+            if _stage_uses_graph_sampler(stage):
+                # Use a Python loop for graph-based samplers that create non-JAX objects.
+                samples_list = [
+                    stage.sample(k)
+                    for k in tqdm(
+                        keys, desc=f"Precomputing graph samples for stage {i}"
+                    )
+                ]
+                # Manually batch the JAX-compatible outputs.
+                samples = jax.tree.map(lambda *x: jnp.stack(x), *samples_list)
+            else:
+                # Use vmap for JIT-compatible assignment-based samplers.
+                samples = jax.vmap(stage.sample)(keys)
             self.samples.append(samples)
 
     @override

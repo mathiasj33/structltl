@@ -87,12 +87,16 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         max_angular_velocity=3.0,
     )
     propositions = ("red", "green", "purple", "yellow")
+    max_nodes = 5
+    max_edges = 5
 
     def __init__(self, **kwargs):
         params = dataclasses.asdict(self.default_params) | kwargs
         super().__init__(
             default_params=EnvParams(**params),
             propositions=self.propositions,
+            max_nodes=self.max_nodes,
+            max_edges=self.max_edges,
         )
 
     @override

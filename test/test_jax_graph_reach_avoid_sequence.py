@@ -13,6 +13,8 @@ from jaxltl.ltl.logic.assignment import Assignment
 propositions = ZoneEnv.propositions
 assignments = [Assignment(frozenset({color})) for color in propositions]
 assignments.append(Assignment(frozenset()))  # empty assignment
+_max_nodes = ZoneEnv.max_nodes
+_max_edges = ZoneEnv.max_edges
 
 
 # TODO: Add assertions
@@ -26,8 +28,8 @@ def test_sampler_to_jax_and_advance():
         propositions=propositions,
         assignments=assignments,
         max_length=3,
-        max_nodes=5,
-        max_edges=5,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
     )
     key = jax.random.key(0)
 
@@ -70,8 +72,8 @@ def test_reach_stay_sampler_to_jax_and_advance():
         propositions=propositions,
         assignments=assignments,
         max_length=3,
-        max_nodes=5,
-        max_edges=5,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
     )
     key = jax.random.key(42)
 
@@ -115,8 +117,8 @@ def test_batch_to_jax_and_advance():
         propositions=propositions,
         assignments=assignments,
         max_length=3,
-        max_nodes=5,
-        max_edges=5,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
     )
     key = jax.random.key(0)
 

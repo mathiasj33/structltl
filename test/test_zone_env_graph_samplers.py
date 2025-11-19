@@ -19,6 +19,8 @@ from jaxltl.ltl.logic.boolean_parser import (
 propositions = ZoneEnv.propositions
 assignments = [Assignment(frozenset({color})) for color in propositions]
 assignments.append(Assignment(frozenset()))  # empty assignment
+_max_nodes = ZoneEnv.max_nodes
+_max_edges = ZoneEnv.max_edges
 
 
 def get_props_from_graph(graph):
@@ -47,8 +49,8 @@ def test_graph_reach_avoid_sampler():
         propositions=propositions,
         assignments=assignments,
         max_length=3,
-        max_nodes=5,
-        max_edges=5,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
     )
     key = jax.random.key(0)
 
@@ -129,8 +131,8 @@ def test_graph_reach_stay_sampler():
         propositions=propositions,
         assignments=assignments,
         max_length=3,
-        max_nodes=5,
-        max_edges=5,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
     )
     key = jax.random.key(42)
 

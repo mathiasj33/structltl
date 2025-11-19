@@ -17,8 +17,8 @@ assignments = [Assignment(frozenset({color})) for color in propositions]
 assignments.append(Assignment(frozenset()))  # empty assignment
 
 _max_length = 3
-_max_nodes = 5
-_max_edges = 5
+_max_nodes = ZoneEnv.max_nodes
+_max_edges = ZoneEnv.max_edges
 
 make = lambda: PrecomputedCurriculum(
     [
@@ -176,5 +176,5 @@ make = lambda: PrecomputedCurriculum(
         ),
     ],
     key=jax.random.key(0),
-    num_samples=int(1e6),
+    num_samples=int(1e3),
 )
