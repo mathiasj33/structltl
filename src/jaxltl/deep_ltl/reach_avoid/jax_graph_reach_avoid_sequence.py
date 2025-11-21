@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from dataclasses import replace
-from typing import TypedDict, cast
+from typing import TypedDict, cast, override
 
 import equinox as eqx
 import jax
@@ -126,6 +126,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
 
     @eqx.filter_jit
     @eqx.debug.assert_max_traces(max_traces=1)
+    @override
     def advance(self) -> "JaxGraphReachAvoidSequence":
         """Advance the reach-avoid sequence by one step. Returns a new sequence."""
         if self.reach_graphs.n_node.ndim > 1:

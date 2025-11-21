@@ -23,7 +23,7 @@ def load_df(path: str | Path) -> pd.DataFrame:
 
 runs = [
     "deepltl",
-    # "ltl-gnn"
+    "ltl-gnn",
     # "tmp",
 ]
 

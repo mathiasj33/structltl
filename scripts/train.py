@@ -44,7 +44,15 @@ def main(cfg: DictConfig):
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
-    curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
+    if cfg.env.precomputed_curriculum_path is not None:
+        precomputed_curriculum_path = (
+            f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_curriculum_path}"
+        )
+    else:
+        precomputed_curriculum_path = None
+    curriculum: Curriculum = hydra.utils.call(
+        cfg.curriculum, load_path=precomputed_curriculum_path
+    )
     env = CurriculumWrapper(
         env, curriculum, episode_window=cfg.curriculum_wrapper.episode_window
     )
