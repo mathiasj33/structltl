@@ -15,6 +15,12 @@ import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
 from jaxltl.deep_ltl.eval.eval import Evaluator
 from jaxltl.deep_ltl.reach_avoid import path_search
+from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
+    GraphReachAvoidSequence,
+)
+from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
+    JaxGraphReachAvoidSequence,
+)
 from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 from jaxltl.environments.environment import Environment, EnvParams
 from jaxltl.environments.wrappers.auto_reset_wrapper import (
@@ -49,6 +55,7 @@ def build_env(
     return env, env_params
 
 
+# NOTE: consider replacing entirely with preprocess_graph_formulas in future
 def preprocess_formulas(
     formulas: list[str], env: Environment | EnvWrapper
 ) -> tuple[JaxLDBA, JaxReachAvoidSequence]:
@@ -64,6 +71,21 @@ def preprocess_formulas(
     return ldba, batched_seqs
 
 
+def preprocess_graph_formulas(
+    formulas: list[str], env: Environment | EnvWrapper
+) -> tuple[JaxLDBA, JaxGraphReachAvoidSequence]:
+    """Preprocesses formulas into a batched JaxLDBA and batched JaxGraphReachAvoidSequence."""
+
+    ldbas, seqs = [], []
+    for formula in formulas:
+        ldba, batched_seqs = _preprocess_graph_formula(formula, env)
+        ldbas.append(ldba)
+        seqs.append(batched_seqs)
+    ldba = _batch_ldbas(ldbas)
+    batched_seqs = _batch_graph_sequences(seqs)
+    return ldba, batched_seqs
+
+
 def _preprocess_formula(
     formula: str, env: Environment | EnvWrapper
 ) -> tuple[JaxLDBA, JaxReachAvoidSequence]:
@@ -73,6 +95,33 @@ def _preprocess_formula(
     jldba = JaxLDBA.from_ldba(ldba, env)
     state_to_seqs = path_search.compute_sequences(ldba, num_loops=2)
     batched_seqs = JaxReachAvoidSequence.from_state_to_seqs(state_to_seqs, env)
+    return jldba, batched_seqs
+
+
+def _preprocess_graph_formula(
+    formula: str, env: Environment | EnvWrapper
+) -> tuple[JaxLDBA, JaxGraphReachAvoidSequence]:
+    """Preprocesses the formula into a JaxLDBA and batched JaxGraphReachAvoidSequence."""
+
+    ldba = _build_ldba(formula, env)
+    jldba = JaxLDBA.from_ldba(ldba, env)
+    state_to_seqs = path_search.compute_sequences(ldba, num_loops=2)
+
+    # Convert assignment-based sequences to graph-based sequences
+    state_to_graph_seqs = {}
+    for state, seq_list in state_to_seqs.items():
+        state_to_graph_seqs[state] = [
+            GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
+            for seq in seq_list
+        ]
+
+    batched_seqs = JaxGraphReachAvoidSequence.from_state_to_seqs(
+        state_to_graph_seqs,
+        env.propositions,
+        env.assignments,
+        env.max_nodes,
+        env.max_edges,
+    )
     return jldba, batched_seqs
 
 
@@ -155,6 +204,74 @@ def _batch_sequences(
     )
 
 
+def _batch_graph_sequences(
+    seqs: list[JaxGraphReachAvoidSequence],
+) -> JaxGraphReachAvoidSequence:
+    """Batch multiple JaxGraphReachAvoidSequences into a single JaxGraphReachAvoidSequence."""
+
+    def pad_and_stack_pytree(pytrees: list):
+        """Pads and stacks a list of pytrees."""
+        # Find the max shape for each leaf array across all pytrees
+        max_shapes = jax.tree.map(
+            lambda *xs: jnp.max(jnp.array([x.shape for x in xs]), axis=0), *pytrees
+        )
+
+        def pad_leaf(leaf, max_shape):
+            pad_config = tuple(
+                (0, max_d - d) for d, max_d in zip(leaf.shape, max_shape, strict=True)
+            )
+            return jnp.pad(
+                leaf, pad_width=pad_config, mode="constant", constant_values=-1
+            )
+
+        padded_pytrees = [
+            jax.tree.map(pad_leaf, pytree, max_shapes) for pytree in pytrees
+        ]
+
+        return jax.tree.map(lambda *xs: jnp.stack(xs, axis=0), *padded_pytrees)
+
+    # Batch the GraphTuple pytrees
+    batched_reach_graphs = pad_and_stack_pytree([s.reach_graphs for s in seqs])
+    batched_avoid_graphs = pad_and_stack_pytree([s.avoid_graphs for s in seqs])
+
+    # For other fields, we pad and stack them individually.
+    def pad_and_stack(get_field_fn):
+        fields = [get_field_fn(s) for s in seqs]
+
+        # Find max dimensions for this specific field
+        max_shape = list(fields[0].shape)
+        for field in fields[1:]:
+            for i, dim in enumerate(field.shape):
+                max_shape[i] = max(max_shape[i], dim)
+
+        padded_fields = []
+        for field in fields:
+            pad_config = tuple(
+                (0, max_d - d) for d, max_d in zip(field.shape, max_shape, strict=True)
+            )
+            padded_field = jnp.pad(
+                field, pad_width=pad_config, mode="constant", constant_values=-1
+            )
+            padded_fields.append(padded_field)
+
+        return jnp.stack(padded_fields, axis=0)
+
+    batched_reach = pad_and_stack(lambda s: s.reach)
+    batched_avoid = pad_and_stack(lambda s: s.avoid)
+    batched_repeat_last = pad_and_stack(lambda s: s.repeat_last)
+    batched_last_index = pad_and_stack(lambda s: s.last_index)
+
+    # Reconstruct the batched sequence
+    return JaxGraphReachAvoidSequence(
+        reach=batched_reach,
+        avoid=batched_avoid,
+        reach_graphs=batched_reach_graphs,
+        avoid_graphs=batched_avoid_graphs,
+        repeat_last=batched_repeat_last,
+        last_index=batched_last_index,
+    )
+
+
 def load_batched_models(
     cfg: DictConfig,
     env: Environment | EnvWrapper,
@@ -172,6 +289,7 @@ def load_batched_models(
         obs_dim=env.observation_space(env_params).shape[0],
         action_dim=env.action_space(env_params).shape[0],
         num_assignments=len(env.assignments),
+        num_propositions=len(env.propositions),
         key=key,
     )
     models = eqx_utils.add_batch_dim(model, num_models)
@@ -198,6 +316,7 @@ def load_model_checkpoints(
         obs_dim=env.observation_space(env_params).shape[0],
         action_dim=env.action_space(env_params).shape[0],
         num_assignments=len(env.assignments),
+        num_propositions=len(env.propositions),
         key=key,
     )
     model = make_model(key)

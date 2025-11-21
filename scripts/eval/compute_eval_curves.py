@@ -20,6 +20,7 @@ from jaxltl.deep_ltl.eval.utils import (
     load_model_checkpoints,
     make_eval_fn,
     preprocess_formulas,
+    preprocess_graph_formulas,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,12 @@ def main(cfg: DictConfig):
     formulas_file = DATA_DIR / cfg.env.name / "eval_formulas.txt"
     with open(formulas_file) as f:
         formulas = [line.strip() for line in f.readlines() if line.strip()]
-    ldba, batched_seqs = preprocess_formulas(formulas, env)
+    # NOTE: consider replacing entirely with preprocess_graph_formulas in future
+    if "ltl_gnn" in cfg.model._target_:
+        ldba, batched_seqs = preprocess_graph_formulas(formulas, env)
+    else:
+        ldba, batched_seqs = preprocess_formulas(formulas, env)
+
     logger.info(f"Processed {len(formulas)} formulas.")
 
     # load models

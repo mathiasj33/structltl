@@ -4,6 +4,7 @@ from jaxltl.deep_ltl.curriculum.zone_env_graph_samplers import (
     GraphZoneReachAvoidSampler,
     GraphZoneReachStaySampler,
 )
+from jaxltl.deep_ltl.eval.utils import _batch_graph_sequences
 from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
     JaxGraphReachAvoidSequence,
 )
@@ -47,6 +48,10 @@ def test_sampler_to_jax_and_advance():
             print(jax_seq.avoid)
             print("\n--- Initial JAX Graph (Avoid) ---")
             print(jax_seq.avoid_graphs)
+            print("\n--- Initial Repeat last ---")
+            print(jax_seq.repeat_last)
+            print("\n--- Initial Last Index ---")
+            print(jax_seq.last_index)
 
         # Advance the sequence
         advanced_seq = jax_seq.advance()
@@ -60,6 +65,10 @@ def test_sampler_to_jax_and_advance():
             print(advanced_seq.avoid)
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
+            print("\n--- Advanced Repeat last ---")
+            print(advanced_seq.repeat_last)
+            print("\n--- Advanced Last Index ---")
+            print(advanced_seq.last_index)
 
         # Second advance
         advanced_seq = advanced_seq.advance()
@@ -91,6 +100,10 @@ def test_reach_stay_sampler_to_jax_and_advance():
             print(jax_seq.avoid)
             print("\n--- Initial JAX Graph (Avoid) ---")
             print(jax_seq.avoid_graphs)
+            print("\n--- Initial Repeat last ---")
+            print(jax_seq.repeat_last)
+            print("\n--- Initial Last Index ---")
+            print(jax_seq.last_index)
 
         # Advance the sequence
         advanced_seq = jax_seq.advance()
@@ -104,6 +117,10 @@ def test_reach_stay_sampler_to_jax_and_advance():
             print(advanced_seq.avoid)
             print("\n--- Advanced JAX Graph (Avoid) ---")
             print(advanced_seq.avoid_graphs)
+            print("\n--- Advanced Repeat last ---")
+            print(advanced_seq.repeat_last)
+            print("\n--- Advanced Last Index ---")
+            print(advanced_seq.last_index)
 
         # Second advance
         advanced_seq = advanced_seq.advance()
@@ -133,13 +150,10 @@ def test_batch_to_jax_and_advance():
         0: [graph_seqs[0], graph_seqs[1], graph_seqs[2]],
         1: [graph_seqs[3], graph_seqs[4], graph_seqs[5]],
     }
-    max_nodes, max_edges = 5, 5
     jax_seq = JaxGraphReachAvoidSequence.from_state_to_seqs(
-        state_to_seqs, propositions, assignments, max_nodes, max_edges
+        state_to_seqs, propositions, assignments, _max_nodes, _max_edges
     )
 
-    print("\n\n--- Batched Reach-Avoid Sample ---")
-    print(f"Assignments: {graph_seq}")
     print("\n--- Initial JAX Assignments (Reach) ---")
     print(jax_seq.reach)
     print("\n--- Initial JAX Graph (Reach) ---")
@@ -148,3 +162,64 @@ def test_batch_to_jax_and_advance():
     print(jax_seq.avoid)
     print("\n--- Initial JAX Graph (Avoid) ---")
     print(jax_seq.avoid_graphs)
+    print("\n--- Initial Repeat last ---")
+    print(jax_seq.repeat_last)
+    print("\n--- Initial Last Index ---")
+    print(jax_seq.last_index)
+
+    graph_0_0 = jax.tree.map(lambda x: x[0, 0], jax_seq.reach_graphs)
+    print("\n--- Sliced Graph (state=0, seq=0) ---")
+    print(graph_0_0)
+
+
+def test_batch_graph_sequences():
+    sampler = GraphZoneReachAvoidSampler(
+        depth=(2, 2),
+        reach=(1, 2),
+        avoid=(0, 2),
+        propositions=propositions,
+        assignments=assignments,
+        max_length=3,
+        max_nodes=_max_nodes,
+        max_edges=_max_edges,
+    )
+    key = jax.random.key(0)
+
+    jax_seqs = []
+    for _ in range(3):
+        graph_seqs = []
+        for _ in range(6):
+            key, subkey = jax.random.split(key)
+            graph_seq = sampler.sample_graph(subkey)
+            graph_seq.repeat_last = 1
+            graph_seqs.append(graph_seq)
+
+        # Convert to JAX version
+        state_to_seqs = {
+            0: [graph_seqs[0], graph_seqs[1], graph_seqs[2]],
+            1: [graph_seqs[3], graph_seqs[4], graph_seqs[5]],
+        }
+        jax_seqs.append(
+            JaxGraphReachAvoidSequence.from_state_to_seqs(
+                state_to_seqs, propositions, assignments, _max_nodes, _max_edges
+            )
+        )
+
+    batched_jax_seq = _batch_graph_sequences(jax_seqs)
+
+    print("\n--- Initial JAX Assignments (Reach) ---")
+    print(batched_jax_seq.reach)
+    print("\n--- Initial JAX Graph (Reach) ---")
+    print(batched_jax_seq.reach_graphs)
+    print("\n--- Initial JAX Assignments (Avoid) ---")
+    print(batched_jax_seq.avoid)
+    print("\n--- Initial JAX Graph (Avoid) ---")
+    print(batched_jax_seq.avoid_graphs)
+    print("\n--- Initial Repeat last ---")
+    print(batched_jax_seq.repeat_last)
+    print("\n--- Initial Last Index ---")
+    print(batched_jax_seq.last_index)
+
+    graph_0_0_0 = jax.tree.map(lambda x: x[0, 0, 0], batched_jax_seq.reach_graphs)
+    print("\n--- Sliced Graph (batch=0, state=0, seq=0) ---")
+    print(graph_0_0_0)

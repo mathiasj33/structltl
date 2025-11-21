@@ -19,6 +19,7 @@ from jaxltl.deep_ltl.eval.utils import (
     load_batched_models,
     make_eval_fn,
     preprocess_formulas,
+    preprocess_graph_formulas,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,11 @@ def main(cfg: DictConfig):
     env, env_params = build_env(cfg, None)
 
     # construct ldbas and batched sequences for all formulas
-    ldba, batched_seqs = preprocess_formulas(cfg.formulas, env)
+    # NOTE: consider replacing entirely with preprocess_graph_formulas in future
+    if "ltl_gnn" in cfg.model._target_:
+        ldba, batched_seqs = preprocess_graph_formulas(cfg.formulas, env)
+    else:
+        ldba, batched_seqs = preprocess_formulas(cfg.formulas, env)
 
     # load models
     key = jax.random.key(0)
