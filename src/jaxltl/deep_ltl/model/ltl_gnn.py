@@ -161,9 +161,8 @@ class LTLGNNModel(ActorCritic):
         output_node_features = processed_nodes["features"]
 
         # 3. Extract root node features
-        max_nodes = graph.n_node[0]
-        seq_len = graph.n_node.shape[0]
-        root_indices = jnp.arange(seq_len) * max_nodes
+        # For ragged graphs, root indices are the cumulative sum of nodes in preceding graphs.
+        root_indices = jnp.concatenate([jnp.array([0]), jnp.cumsum(graph.n_node[:-1])])
         root_features = output_node_features[root_indices]
 
         return root_features

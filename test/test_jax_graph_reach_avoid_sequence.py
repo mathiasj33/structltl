@@ -1,4 +1,5 @@
 import jax
+import jax.numpy as jnp
 
 from jaxltl.deep_ltl.curriculum.zone_env_graph_samplers import (
     GraphZoneReachAvoidSampler,
@@ -38,7 +39,14 @@ def test_sampler_to_jax_and_advance():
         key, subkey = jax.random.split(key)
         jax_seq = sampler.sample(subkey)
 
-        if j < 5:
+        at_size_limit = (
+            jnp.sum(jax_seq.reach_graphs.n_node) == _max_nodes
+            or jnp.sum(jax_seq.avoid_graphs.n_node) == _max_nodes
+            or jnp.sum(jax_seq.reach_graphs.n_edge) == _max_edges
+            or jnp.sum(jax_seq.avoid_graphs.n_edge) == _max_edges
+        )
+
+        if j < 5 or at_size_limit:
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
             print("\n--- Initial JAX Assignments (Reach) ---")
             print(jax_seq.reach)
@@ -56,7 +64,7 @@ def test_sampler_to_jax_and_advance():
         # Advance the sequence
         advanced_seq = jax_seq.advance()
 
-        if j < 5:
+        if j < 5 or at_size_limit:
             print("\n--- Advanced JAX Assignments (Reach) ---")
             print(advanced_seq.reach)
             print("\n--- Advanced JAX Graph (Reach) ---")
@@ -90,7 +98,14 @@ def test_reach_stay_sampler_to_jax_and_advance():
         key, subkey = jax.random.split(key)
         jax_seq = sampler.sample(subkey)
 
-        if j < 5:
+        at_size_limit = (
+            jnp.sum(jax_seq.reach_graphs.n_node) == _max_nodes
+            or jnp.sum(jax_seq.avoid_graphs.n_node) == _max_nodes
+            or jnp.sum(jax_seq.reach_graphs.n_edge) == _max_edges
+            or jnp.sum(jax_seq.avoid_graphs.n_edge) == _max_edges
+        )
+
+        if j < 5 or at_size_limit:
             print(f"\n\n--- Reach-Avoid Sample {j + 1} ---")
             print("\n--- Initial JAX Assignments (Reach) ---")
             print(jax_seq.reach)
@@ -108,7 +123,7 @@ def test_reach_stay_sampler_to_jax_and_advance():
         # Advance the sequence
         advanced_seq = jax_seq.advance()
 
-        if j < 5:
+        if j < 5 or at_size_limit:
             print("\n--- Advanced JAX Assignments (Reach) ---")
             print(advanced_seq.reach)
             print("\n--- Advanced JAX Graph (Reach) ---")
@@ -126,7 +141,7 @@ def test_reach_stay_sampler_to_jax_and_advance():
         advanced_seq = advanced_seq.advance()
 
 
-def test_batch_to_jax_and_advance():
+def test_batch_to_jax():
     sampler = GraphZoneReachAvoidSampler(
         depth=(2, 2),
         reach=(1, 2),
