@@ -44,7 +44,15 @@ def main(cfg: DictConfig):
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
-    curriculum: Curriculum = hydra.utils.call(cfg.curriculum)
+    if cfg.env.precomputed_curriculum_path is not None:
+        precomputed_curriculum_path = (
+            f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_curriculum_path}"
+        )
+    else:
+        precomputed_curriculum_path = None
+    curriculum: Curriculum = hydra.utils.call(
+        cfg.curriculum, load_path=precomputed_curriculum_path
+    )
     env = CurriculumWrapper(
         env, curriculum, episode_window=cfg.curriculum_wrapper.episode_window
     )
@@ -59,12 +67,15 @@ def main(cfg: DictConfig):
     split = jax.vmap(jax.random.split)(keys)
     keys, model_keys = split[:, 0], split[:, 1]
 
-    make_models = eqx.filter_vmap(build_model, in_axes=(None, None, None, None, 0))
+    make_models = eqx.filter_vmap(
+        build_model, in_axes=(None, None, None, None, None, 0)
+    )
     models = make_models(
         cfg.model,
         env.observation_space(env_params).shape[0],
         env.action_space(env_params).shape[0],
         len(env.assignments),
+        len(env.propositions),
         model_keys,
     )
 
@@ -164,6 +175,7 @@ def build_model(
     obs_dim: int,
     action_dim: int,
     num_assignments: int,
+    num_propositions: int,
     key: jax.Array,
 ) -> ActorCritic:
     model: ActorCritic = hydra.utils.instantiate(
@@ -171,6 +183,7 @@ def build_model(
         obs_dim=obs_dim,
         action_dim=action_dim,
         num_assignments=num_assignments,
+        num_propositions=num_propositions,
         key=key,
     )
     return model

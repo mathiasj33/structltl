@@ -7,12 +7,11 @@ from jaxtyping import PyTree
 
 from jaxltl import eqx_utils
 from jaxltl.deep_ltl.curriculum.curriculum import JaxReachAvoidSequence
-from jaxltl.deep_ltl.wrappers.curriculum_wrapper import SequenceObservation
-from jaxltl.environments.environment import (
-    EnvObservation,
-    EnvParams,
-    EnvTransition,
+from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
+    JaxGraphReachAvoidSequence,
 )
+from jaxltl.deep_ltl.wrappers.curriculum_wrapper import SequenceObservation
+from jaxltl.environments.environment import EnvObservation, EnvParams, EnvTransition
 from jaxltl.environments.wrappers.vectorize_wrapper import VectorizeWrapper
 from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 from jaxltl.ltl.automata.jax_ldba import JaxLDBA
@@ -238,12 +237,26 @@ class Evaluator(eqx.Module):
         ) -> JaxReachAvoidSequence:
             # ldba_state: int
             # obs: EnvObservation
-            state_seqs = JaxReachAvoidSequence(
-                reach=batched_seqs.reach[ldba_state],
-                avoid=batched_seqs.avoid[ldba_state],
-                repeat_last=batched_seqs.repeat_last[ldba_state],
-                last_index=batched_seqs.last_index[ldba_state],
-            )
+            if type(batched_seqs) is JaxGraphReachAvoidSequence:
+                state_seqs = JaxGraphReachAvoidSequence(
+                    reach=batched_seqs.reach[ldba_state],
+                    avoid=batched_seqs.avoid[ldba_state],
+                    reach_graphs=jax.tree.map(
+                        lambda x: x[ldba_state], batched_seqs.reach_graphs
+                    ),
+                    avoid_graphs=jax.tree.map(
+                        lambda x: x[ldba_state], batched_seqs.avoid_graphs
+                    ),
+                    repeat_last=batched_seqs.repeat_last[ldba_state],
+                    last_index=batched_seqs.last_index[ldba_state],
+                )
+            else:
+                state_seqs = JaxReachAvoidSequence(
+                    reach=batched_seqs.reach[ldba_state],
+                    avoid=batched_seqs.avoid[ldba_state],
+                    repeat_last=batched_seqs.repeat_last[ldba_state],
+                    last_index=batched_seqs.last_index[ldba_state],
+                )
             num_seqs = state_seqs.reach.shape[0]
             batched_obs = jax.tree.map(
                 lambda x: jnp.broadcast_to(x[None, ...], (num_seqs,) + x.shape), obs

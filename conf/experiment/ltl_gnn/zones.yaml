@@ -1,18 +1,18 @@
 # @package __global__
 
 defaults:
-  - /env: rgb_zone_env
+  - /env: zone_env
   - /alg: deep_ltl
   - /rl_alg: ppo
 
 curriculum:
-  _target_: jaxltl.deep_ltl.curriculum.zone_env_curriculum.make
+  _target_: jaxltl.deep_ltl.curriculum.zone_env_graph_curriculum.make
 
 curriculum_wrapper:
   episode_window: 512
 
 model:
-  _target_: jaxltl.deep_ltl.model.deep_ltl.DeepLTLModel
+  _target_: jaxltl.deep_ltl.model.ltl_gnn.LTLGNNModel
   _recursive_: false
   env_net:
     _target_: jaxltl.networks.mlp.MLP
@@ -31,12 +31,10 @@ model:
     activation: ${act:tanh}
   sequence:
     embedding_dim: 16
-    deep_sets:
-      _target_: jaxltl.networks.deep_sets.DeepSets
-      hidden_sizes: [32]
-      out_size: 16
+    gcn:
+      _target_: jaxltl.networks.gcn.GCN
+      hidden_sizes: [32, 32]
       activation: ${act:relu}
-  embedding_dim: 32
 
 rl_alg:
   total_timesteps: 5e6
@@ -53,3 +51,6 @@ rl_alg:
   max_grad_norm: 0.5
   anneal_lr: false
   adam_eps: 1e-8
+
+env:
+  precomputed_curriculum_path: graph_sampled_curriculum.eqx

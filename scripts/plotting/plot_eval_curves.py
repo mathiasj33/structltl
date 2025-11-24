@@ -21,7 +21,11 @@ def load_df(path: str | Path) -> pd.DataFrame:
     return df
 
 
-runs = ["deepltl"]
+runs = [
+    "deepltl",
+    "ltl-gnn",
+    # "tmp",
+]
 
 dfs = [load_df(f"runs/ZoneEnv/{run}/eval_results_checkpoints.csv") for run in runs]
 df = pd.concat(dfs, ignore_index=True)

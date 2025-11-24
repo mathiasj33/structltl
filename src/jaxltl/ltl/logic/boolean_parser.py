@@ -1,5 +1,6 @@
 import functools
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from jaxltl.ltl.logic.boolean_lexer import Lexer, Token, TokenType
@@ -95,8 +96,23 @@ class AndNode(Node):
         self.left = left
         self.right = right
 
+    def __repr__(self) -> str:
+        return f"({self.left} & {self.right})"
+
     def eval(self, assignment: "Assignment") -> bool:
         return self.left.eval(assignment) and self.right.eval(assignment)
+
+
+class MultiAndNode(Node):
+    def __init__(self, operands: Sequence[Node]):
+        assert len(operands) > 1, "MultiAndNode requires at least two operands."
+        self.operands = operands
+
+    def __repr__(self) -> str:
+        return f"({' & '.join(map(str, self.operands))})"
+
+    def eval(self, assignment: "Assignment") -> bool:
+        return all(operand.eval(assignment) for operand in self.operands)
 
 
 class OrNode(Node):
@@ -104,13 +120,31 @@ class OrNode(Node):
         self.left = left
         self.right = right
 
+    def __repr__(self) -> str:
+        return f"({self.left} | {self.right})"
+
     def eval(self, assignment: "Assignment") -> bool:
         return self.left.eval(assignment) or self.right.eval(assignment)
+
+
+class MultiOrNode(Node):
+    def __init__(self, operands: Sequence[Node]):
+        assert len(operands) > 1, "MultiOrNode requires at least two operands."
+        self.operands = operands
+
+    def __repr__(self) -> str:
+        return f"({' | '.join(map(str, self.operands))})"
+
+    def eval(self, assignment: "Assignment") -> bool:
+        return any(operand.eval(assignment) for operand in self.operands)
 
 
 class NotNode(Node):
     def __init__(self, operand: Node):
         self.operand = operand
+
+    def __repr__(self) -> str:
+        return f"!({self.operand})"
 
     def eval(self, assignment: "Assignment") -> bool:
         return not self.operand.eval(assignment)
@@ -119,6 +153,9 @@ class NotNode(Node):
 class VarNode(Node):
     def __init__(self, name: str):
         self.name = name
+
+    def __repr__(self) -> str:
+        return self.name
 
     def eval(self, assignment: "Assignment") -> bool:
         return self.name in assignment.true_propositions
@@ -129,8 +166,19 @@ class ImplicationNode(Node):
         self.left = left
         self.right = right
 
+    def __repr__(self) -> str:
+        return f"({self.left} -> {self.right})"
+
     def eval(self, assignment: "Assignment") -> bool:
         return (not self.left.eval(assignment)) or self.right.eval(assignment)
+
+
+class EmptyNode(Node):
+    def eval(self, assignment: "Assignment") -> bool:
+        return len(assignment.true_propositions) == 0
+
+    def __repr__(self) -> str:
+        return "{" + "}"
 
 
 @functools.lru_cache(maxsize=500_000)
