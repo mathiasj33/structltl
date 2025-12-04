@@ -94,33 +94,11 @@ def main(cfg: DictConfig):
 
     logger.info("Starting training")
     cb = make_callback(cfg)
-    models, metrics = jax.block_until_ready(
+    models = jax.block_until_ready(
         compiled(models, env, env_params, keys, cb, cfg.save_freq, seeds)
     )
     end_time = time.time()
     logger.info(f"Training completed in {end_time - start_time:.2f} seconds")
-
-    dfs = []
-    for seed in range(cfg.num_seeds):
-        seed_metrics = jax.tree.map(lambda x: x[seed], metrics)
-        return_values = seed_metrics["episode_return"][seed_metrics["done"]].tolist()
-        lengths = seed_metrics["episode_length"][seed_metrics["done"]].tolist()
-        stages = seed_metrics["curriculum_stage"][seed_metrics["done"]].tolist()
-        timesteps = (
-            seed_metrics["total_step"][seed_metrics["done"]] * cfg.rl_alg.num_envs
-        ).tolist()
-        df = pd.DataFrame(
-            {
-                "timestep": timesteps,
-                "return": return_values,
-                "length": lengths,
-                "curriculum_stage": stages,
-            }
-        )
-        df["seed"] = seed
-        dfs.append(df)
-    df = pd.concat(dfs, ignore_index=True)
-    df.to_csv("logs.csv", index=False)
 
     eqx_utils.save("models.eqx", models, metadata={"num_models": cfg.num_seeds})
     logger.info("Models saved to models.eqx")
@@ -166,6 +144,26 @@ def make_callback(cfg: DictConfig):
         folder.mkdir(parents=True, exist_ok=True)
         filename = folder / f"model_seed{seed}_step{step}.eqx"
         eqx_utils.save(filename, model_params)
+
+        # log to csv
+        return_values = metric["episode_return"][metric["done"]].tolist()
+        lengths = metric["episode_length"][metric["done"]].tolist()
+        stages = metric["curriculum_stage"][metric["done"]].tolist()
+        timesteps = (
+            metric["total_step"][metric["done"]] * cfg.rl_alg.num_envs
+        ).tolist()
+        df = pd.DataFrame(
+            {
+                "timestep": timesteps,
+                "return": return_values,
+                "length": lengths,
+                "curriculum_stage": stages,
+            }
+        )
+        df["seed"] = int(seed)
+        df.to_csv(
+            "logs.csv", mode="a", header=not Path("logs.csv").exists(), index=False
+        )
 
     return callback
 

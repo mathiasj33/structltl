@@ -80,7 +80,7 @@ class PPO(RLAlgorithm):
         callback: Callable | None = None,
         callback_freq: int | None = None,
         seed: jax.Array | None = None,
-    ) -> tuple[ActorCritic, dict]:
+    ) -> ActorCritic:
         """Train the model using PPO."""
 
         # Initialize optimizer and training state
@@ -145,13 +145,13 @@ class PPO(RLAlgorithm):
                 total_step = step_count * self.config.num_envs * self.config.num_steps
                 params, _ = eqx.partition(train_state.model, eqx.is_array)
                 io_callback(callback, None, metric, params, seed, total_step)
-            return carry, metric
+            return carry, None
 
         key, update_key = jax.random.split(key)
         carry = (train_state, obsv, env_state, update_key, jnp.zeros((), jnp.int32))
-        carry, metric = eqx_utils.filter_scan(callback_iter, carry, None, num_callbacks)
+        carry, _ = eqx_utils.filter_scan(callback_iter, carry, None, num_callbacks)
         train_state = carry[0]
-        return train_state.model, metric
+        return train_state.model
 
     def linear_schedule(self, count):
         frac = (

@@ -21,7 +21,7 @@ class RLAlgorithm(eqx.Module):
         callback: Callable | None = None,
         callback_freq: int | None = None,
         seed: jax.Array | None = None,
-    ) -> tuple[ActorCritic, dict]:
+    ) -> ActorCritic:
         """Train the model. Jittable.
 
         Args:
@@ -34,5 +34,5 @@ class RLAlgorithm(eqx.Module):
             seed: The seed associated with this run, can be used in the callback.
 
         Returns:
-            A tuple containing the trained model and a dictionary of training metrics."""
+            The trained model."""
         pass
