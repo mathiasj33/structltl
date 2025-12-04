@@ -9,6 +9,10 @@ from jaxltl.environments.environment import Environment, EnvObservation, EnvTran
 from jaxltl.environments.wrappers import EnvWrapper
 from jaxltl.environments.wrappers.wrapper import WrapperState
 
+# TODO: implement curriculum stages that keep track of success rates for different tasks.
+# Compute reach-avoid sequences, assign index, and keep track of success rates per task.
+# Sample reach-avoid sequences based on success rates.
+
 
 class CurriculumState[TObsFeatures: NamedTuple](WrapperState):
     """State for CurriculumWrapper."""

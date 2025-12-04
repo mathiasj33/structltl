@@ -28,7 +28,7 @@ class Discrete(Space):
     """Minimal jittable class for discrete spaces."""
 
     n: int
-    shape = ()
+    shape: tuple = ()
     dtype = jnp.int32
 
     def sample(self, key: jax.Array) -> jax.Array:

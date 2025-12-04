@@ -19,6 +19,8 @@ from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
 from jaxltl.rl.actor_critic import ActorCritic
 
+# TODO: refactor this to be a separate alg
+
 
 class LTLGNNModel(ActorCritic):
     env_net: MLP

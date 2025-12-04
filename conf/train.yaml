@@ -1,9 +1,9 @@
 defaults:
-  - experiment: deep_ltl/zones
+  - experiment: deep_ltl/letter
   - hydra: training_run
   - _self_
 
-run: tmp
+run: deepltl
 num_seeds: 5
 use_gpu: true # use gpu if available
 rl_alg:

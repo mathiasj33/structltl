@@ -1,6 +1,6 @@
 defaults:
-  - experiment: deep_ltl/zones
-  - formulas: zones/custom
+  - experiment: deep_ltl/letter
+  - formulas: letter/finite
   - hydra: simple
   - _self_
 
@@ -9,11 +9,13 @@ env:
   use_precomputed_resets: true # setting to true ignores default options
   precomputed_resets_path: sampled_resets_test.eqx
 eval:
-  num_episodes: 512
+  num_episodes: 8
   deterministic: false
-  discount: 0.998
+  discount: 0.94
 plotting:
   plot: true
   num_trajectories: 8
   rows: 2
   cols: 4
+formulas:
+  - "(F d) & (!f U (d & F b))"

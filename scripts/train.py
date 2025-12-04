@@ -20,6 +20,7 @@ import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
 from jaxltl.deep_ltl.curriculum.curriculum import Curriculum
 from jaxltl.deep_ltl.wrappers.curriculum_wrapper import CurriculumWrapper
+from jaxltl.environments.spaces import Space
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
 from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
 from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
@@ -72,8 +73,8 @@ def main(cfg: DictConfig):
     )
     models = make_models(
         cfg.model,
-        env.observation_space(env_params).shape[0],
-        env.action_space(env_params).shape[0],
+        env.observation_space(env_params).shape,
+        env.action_space(env_params),
         len(env.assignments),
         len(env.propositions),
         model_keys,
@@ -170,20 +171,22 @@ def make_callback(cfg: DictConfig):
 
 def build_model(
     model_cfg: DictConfig,
-    obs_dim: int,
-    action_dim: int,
+    obs_shape: tuple[int, ...],
+    act_space: Space,
     num_assignments: int,
     num_propositions: int,
     key: jax.Array,
 ) -> ActorCritic:
-    model: ActorCritic = hydra.utils.instantiate(
+    model_fn = hydra.utils.instantiate(
         model_cfg,
-        obs_dim=obs_dim,
-        action_dim=action_dim,
+        obs_shape=obs_shape,
         num_assignments=num_assignments,
         num_propositions=num_propositions,
         key=key,
+        _partial_=True,
     )
+    # Ensure the space is not converted to an OmegaConf object
+    model: ActorCritic = model_fn(act_space=act_space)
     return model
 
 

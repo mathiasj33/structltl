@@ -3,7 +3,7 @@ authors = [
     { name = "Mathias Jackermeier", email = "mathias.jackermeier@outlook.com" },
 ]
 name = "jaxltl"
-requires-python = ">= 3.12"
+requires-python = ">=3.12,<3.13"
 version = "0.1.0"
 dependencies = [
     "optax>=0.2.6,<0.3",

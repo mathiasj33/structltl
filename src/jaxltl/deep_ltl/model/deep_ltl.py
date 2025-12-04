@@ -1,3 +1,4 @@
+from math import prod
 from typing import NamedTuple, override
 
 import distrax
@@ -9,7 +10,10 @@ from jaxtyping import PyTree
 from omegaconf import DictConfig
 
 from jaxltl.deep_ltl.curriculum.sequence_sampler import JaxReachAvoidSequence
-from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
+from jaxltl.deep_ltl.model.actor.actor import Actor
+from jaxltl.environments import spaces
+from jaxltl.environments.spaces import Space
+from jaxltl.networks.conv_net import ConvNet
 from jaxltl.networks.deep_sets import DeepSets
 from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
@@ -17,26 +21,29 @@ from jaxltl.rl.actor_critic import ActorCritic
 
 
 class DeepLTLModel(ActorCritic):
-    env_net: MLP
+    env_net: MLP | ConvNet
     embedding: nn.Embedding
     deep_sets: DeepSets
     gru: GRUCell
-    actor: ContinuousActor
+    actor: Actor
     critic: MLP
+
+    _flatten_features: bool
 
     def __init__(
         self,
-        obs_dim: int,
-        action_dim: int,
+        obs_shape: tuple[int, ...],
+        act_space: Space,
         num_assignments: int,
         key: jax.Array,
         **kwargs,
     ):
         config = DictConfig(kwargs)
         key, env_key = jax.random.split(key)
-        self.env_net = hydra.utils.instantiate(
-            config.env_net, in_size=obs_dim, key=env_key
-        )
+        is_conv = "ConvNet" in config.env_net._target_
+        params = {"obs_shape": obs_shape} if is_conv else {"in_size": prod(obs_shape)}
+        self.env_net = hydra.utils.instantiate(config.env_net, **params, key=env_key)
+        self._flatten_features = not is_conv
         key, emb_key = jax.random.split(key)
         embedding_dim = config.sequence.embedding_dim
         self.embedding = nn.Embedding(
@@ -58,9 +65,14 @@ class DeepLTLModel(ActorCritic):
             key=gru_key,
         )
         actor_key, critic_key = jax.random.split(key)
-        joint_dim = config.env_net.out_size + 2 * config.sequence.embedding_dim
+        joint_dim = self.env_net.output_size + 2 * config.sequence.embedding_dim
+        params = (
+            {"num_actions": act_space.n}
+            if isinstance(act_space, spaces.Discrete)
+            else {"action_dim": act_space.shape[0]}
+        )
         self.actor = hydra.utils.instantiate(
-            config.actor, in_size=joint_dim, action_dim=action_dim, key=actor_key
+            config.actor, in_size=joint_dim, **params, key=actor_key
         )
         self.critic = hydra.utils.instantiate(
             config.critic,
@@ -83,7 +95,11 @@ class DeepLTLModel(ActorCritic):
 
     @override
     def _compute_common_features(self, obs: PyTree) -> jax.Array:
-        x = self.flatten_features(obs.features)
+        x = (
+            self.flatten_features(obs.features)
+            if self._flatten_features
+            else obs.features.features
+        )
         x = jax.vmap(self.env_net)(x)
         emb = jax.vmap(self._compute_sequence_embedding)(obs.seq)
         return jnp.concatenate([x, emb], axis=-1)

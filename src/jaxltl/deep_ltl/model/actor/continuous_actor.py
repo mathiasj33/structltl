@@ -1,16 +1,16 @@
 from collections.abc import Callable
 
 import distrax
-import equinox as eqx
 import jax
 import jax.numpy as jnp
 from jax.nn.initializers import Initializer
 
+from jaxltl.deep_ltl.model.actor.actor import Actor
 from jaxltl.deep_ltl.model.epsilon_distribution import EpsilonDistribution
 from jaxltl.networks.mlp import MLP
 
 
-class ContinuousActor(eqx.Module):
+class ContinuousActor(Actor):
     encoder: MLP
     action_mean: MLP
     action_std: MLP | None

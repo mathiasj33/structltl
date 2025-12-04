@@ -15,6 +15,7 @@ class MLP(CallableModule):
     layers: list[eqx.nn.Linear]
     activation: Callable[[jax.Array], jax.Array]
     final_layer_activation: bool
+    output_size: int
 
     def __init__(
         self,
@@ -42,6 +43,7 @@ class MLP(CallableModule):
         ]
         self.activation = activation
         self.final_layer_activation = final_layer_activation
+        self.output_size = out_size
 
     @override
     @eqx.filter_jit

@@ -284,14 +284,15 @@ def load_batched_models(
     model_path = f"runs/{cfg.env.name}/{cfg.run}/models.eqx"
     metadata = eqx_utils.load_metadata(model_path)
     num_models = metadata["num_models"]
-    model = hydra.utils.instantiate(
+    model_fn = hydra.utils.instantiate(
         cfg.model,
-        obs_dim=env.observation_space(env_params).shape[0],
-        action_dim=env.action_space(env_params).shape[0],
+        obs_shape=env.observation_space(env_params).shape,
         num_assignments=len(env.assignments),
         num_propositions=len(env.propositions),
         key=key,
+        _partial_=True,
     )
+    model: ActorCritic = model_fn(act_space=env.action_space(env_params))
     models = eqx_utils.add_batch_dim(model, num_models)
     models = eqx_utils.load(model_path, models)
     return models
@@ -311,14 +312,14 @@ def load_model_checkpoints(
         list of checkpoint steps.
     """
 
-    make_model = lambda key: hydra.utils.instantiate(
+    model_fn = hydra.utils.instantiate(
         cfg.model,
-        obs_dim=env.observation_space(env_params).shape[0],
-        action_dim=env.action_space(env_params).shape[0],
+        obs_shape=env.observation_space(env_params).shape,
         num_assignments=len(env.assignments),
         num_propositions=len(env.propositions),
-        key=key,
+        _partial_=True,
     )
+    make_model = lambda key: model_fn(act_space=env.action_space(env_params), key=key)
     model = make_model(key)
     params, static = eqx.partition(model, eqx.is_array)
 

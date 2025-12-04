@@ -6,7 +6,7 @@ from .serialization import (
     save,
     save_with_treedef,
 )
-from .utils import add_batch_dim, pytree_where
+from .utils import add_batch_dim, ensemble_index, pytree_where
 
 __all__ = [
     "filter_scan",
@@ -17,4 +17,5 @@ __all__ = [
     "load_metadata",
     "add_batch_dim",
     "pytree_where",
+    "ensemble_index",
 ]

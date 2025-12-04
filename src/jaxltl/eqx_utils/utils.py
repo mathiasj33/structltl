@@ -4,6 +4,21 @@ import jax.numpy as jnp
 from jaxtyping import PyTree
 
 
+def ensemble_index(module: eqx.Module, index: int) -> eqx.Module:
+    """Get a single member of an ensemble Equinox Module.
+
+    Args:
+        module: The Equinox Module representing the ensemble.
+        index: The index of the ensemble member to extract.
+
+    Returns:
+        A new Equinox Module corresponding to the specified ensemble member.
+    """
+    params, static = eqx.partition(module, eqx.is_array)
+    indexed_params = jax.tree.map(lambda x: x[index], params)
+    return eqx.combine(indexed_params, static)
+
+
 def add_batch_dim(module: eqx.Module, batch_size: int) -> eqx.Module:
     """Add a batch dimension to all array fields of an Equinox Module.
 
