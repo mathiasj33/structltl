@@ -35,3 +35,15 @@ def filter_scan[Carry, X, Y](
     )
     carry = eqx.combine(carry_params, carry_static)
     return carry, y
+
+
+def filter_map(f, xs, *, batch_size: int | None = None):
+    """A wrapper around jax.lax.map that supports equinox modules. Does not support
+    equinox modules as outputs."""
+    params, static = eqx.partition(xs, eqx.is_array)
+
+    def aux(params):
+        x = eqx.combine(params, static)
+        return f(x)
+
+    return jax.lax.map(aux, params, batch_size=batch_size)

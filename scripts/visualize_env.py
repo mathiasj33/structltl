@@ -15,7 +15,7 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
 from jaxltl.hydra_utils.utils import resolve_default_options
 
 
-@hydra.main(version_base="1.1", config_path="../conf", config_name="visualize")
+@hydra.main(version_base="1.1", config_path="../conf", config_name="visualize_env")
 def main(cfg: DictConfig):
     default_options = resolve_default_options(cfg.env)
 

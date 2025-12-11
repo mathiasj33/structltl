@@ -40,10 +40,12 @@ class Evaluator(eqx.Module):
 
     num_episodes: int  # Number of evaluation episodes. We run each episode in parallel.
     discount: float  # Discount factor for returns.
+    return_trajs: bool  # Whether to return trajectories. May use a lot of memory.
 
-    def __init__(self, num_episodes: int, discount: float):
+    def __init__(self, num_episodes: int, discount: float, return_trajs: bool = False):
         self.num_episodes = num_episodes
         self.discount = discount
+        self.return_trajs = return_trajs
 
     @eqx.filter_jit
     def eval(
@@ -55,14 +57,15 @@ class Evaluator(eqx.Module):
         ldba: JaxLDBA,
         batched_seqs: JaxReachAvoidSequence,
         key: jax.Array,
-    ) -> tuple[jax.Array, jax.Array, jax.Array, PyTree]:
+    ) -> tuple[jax.Array, jax.Array, jax.Array, PyTree | None]:
         """Evaluate the model on the environment with the given LDBA and batched sequences.
 
         Returns:
             metric: jax.Array of shape (num_episodes,) with success/accepting visits
             returns: jax.Array of shape (num_episodes,) with discounted returns
             lengths: jax.Array of shape (num_episodes,) with lengths of episodes
-            trajs: PyTree of shape (num_episodes, max_length, ...) with env states
+            trajs: PyTree of shape (num_episodes, max_length, ...) with env states or
+                None if return_trajs is False
         """
 
         def rollout_cond(
@@ -105,11 +108,12 @@ class Evaluator(eqx.Module):
             )
 
             # record trajectory
-            trajs = jax.tree.map(
-                lambda x, y: x.at[:, index + 1].set(y),
-                trajs,
-                transition.state.state,
-            )
+            if self.return_trajs:
+                trajs = jax.tree.map(
+                    lambda x, y: x.at[:, index + 1].set(y),
+                    trajs,
+                    transition.state.state,
+                )
 
             # update LDBA state
             # (num_envs,) int32
@@ -177,13 +181,16 @@ class Evaluator(eqx.Module):
             env_state, env_params
         )
         max_length = env_params.max_steps_in_episode
-        trajs = jax.tree.map(
-            lambda x: jnp.zeros(
-                (self.num_episodes, max_length + 1) + x.shape[1:], dtype=x.dtype
-            ),
-            env_state.state,
-        )
-        trajs = jax.tree.map(lambda x, y: x.at[:, 0].set(y), trajs, env_state.state)
+        if self.return_trajs:
+            trajs = jax.tree.map(
+                lambda x: jnp.zeros(
+                    (self.num_episodes, max_length + 1) + x.shape[1:], dtype=x.dtype
+                ),
+                env_state.state,
+            )
+            trajs = jax.tree.map(lambda x, y: x.at[:, 0].set(y), trajs, env_state.state)
+        else:
+            trajs = None
         index = jnp.zeros((), dtype=jnp.int32)
         ldba_state = jnp.full((self.num_episodes,), ldba.initial_state, dtype=jnp.int32)
         seqs = self._choose_sequences(model, ldba_state, batched_seqs, obsv)
@@ -233,8 +240,9 @@ class Evaluator(eqx.Module):
         current observation and LDBA state."""
 
         def choose_sequence_for_env(
-            ldba_state: jax.Array, obs: EnvObservation
+            inputs: tuple[jax.Array, EnvObservation],
         ) -> JaxReachAvoidSequence:
+            ldba_state, obs = inputs
             # ldba_state: int
             # obs: EnvObservation
             if type(batched_seqs) is JaxGraphReachAvoidSequence:
@@ -270,10 +278,10 @@ class Evaluator(eqx.Module):
             padded = state_seqs.reach[:, 0, 0] == -1
             scores = jnp.where(padded, -jnp.inf, scores)
             best_index = jnp.argmax(scores)
-            return jax.tree.map(lambda x: x[best_index], state_seqs)
+            best_seq = jax.tree.map(lambda x: x[best_index], state_seqs)
+            return best_seq
 
-        batched_choose_sequence = jax.vmap(choose_sequence_for_env, in_axes=(0, 0))
-        return batched_choose_sequence(ldba_state, obsv)
+        return jax.lax.map(choose_sequence_for_env, (ldba_state, obsv))
 
     def _is_epsilon_enabled(
         self, env: EnvWrapper, seq: JaxReachAvoidSequence, assignment_index: jax.Array

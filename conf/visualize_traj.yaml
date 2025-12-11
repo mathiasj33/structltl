@@ -1,16 +1,20 @@
 defaults:
-  - experiment: deep_ltl/letter
-  - formulas: letter/finite
+  - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
-
-run: deepltl
 env:
   use_precomputed_resets: true # setting to true ignores default options
   precomputed_resets_path: sampled_resets_test.eqx
+
+run: deepltl
+
 eval:
-  num_episodes: 512
+  formula: "GF red & GF green"
+  model_index: 0
+  num_episodes: 8
   deterministic: false
-  discount: 0.94
-  models_per_batch: 1
-  formulas_per_batch: 5
+  discount: 0.99
+
+plotting:
+  rows: 2
+  cols: 4

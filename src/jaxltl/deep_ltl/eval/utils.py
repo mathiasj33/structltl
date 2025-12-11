@@ -1,5 +1,6 @@
 """Utility functions for evaluation scripts."""
 
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable
@@ -9,7 +10,9 @@ import equinox as eqx
 import hydra
 import jax
 import jax.numpy as jnp
+from jax.experimental import io_callback
 from omegaconf import DictConfig
+from tqdm import tqdm
 
 import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
@@ -278,8 +281,12 @@ def load_batched_models(
     env_params: EnvParams,
     *,
     key: jax.Array,
-) -> ActorCritic:
-    """Load a batched model (over seeds) from disk."""
+) -> tuple[ActorCritic, int]:
+    """Load a batched model (over seeds) from disk.
+
+    Returns:
+        batched model, batch size
+    """
 
     model_path = f"runs/{cfg.env.name}/{cfg.run}/models.eqx"
     metadata = eqx_utils.load_metadata(model_path)
@@ -295,7 +302,7 @@ def load_batched_models(
     model: ActorCritic = model_fn(act_space=env.action_space(env_params))
     models = eqx_utils.add_batch_dim(model, num_models)
     models = eqx_utils.load(model_path, models)
-    return models
+    return models, num_models
 
 
 def load_model_checkpoints(
@@ -356,17 +363,59 @@ def load_model_checkpoints(
     return eqx.combine(models, static), sorted_steps
 
 
-def make_eval_fn(cfg: DictConfig) -> Callable:
-    """Creates an eval function that is vmapped over formulas and seeds. The function
-    returns arrays of shape (num_formulas, num_models, num_episodes)."""
+def make_eval_fn(cfg: DictConfig, num_models: int, return_trajs: bool) -> Callable:
+    """Creates an eval function that for different formulas and seeds. The function
+    returns arrays of shape (num_models, num_formulas, num_episodes)."""
 
     evaluator = Evaluator(
-        num_episodes=cfg.eval.num_episodes, discount=cfg.eval.discount
+        num_episodes=cfg.eval.num_episodes,
+        discount=cfg.eval.discount,
+        return_trajs=return_trajs,
     )
-    eval_fn = eqx.filter_vmap(  # map over seeds
-        evaluator.eval,
-        in_axes=(eqx.if_array(0), None, None, None, None, None, None),
-    )
-    # map over formulas
-    eval_fn = jax.vmap(eval_fn, in_axes=(None, None, None, None, 0, 0, None))
+    if "models_per_batch" not in cfg.eval:
+        model_batch_size = None
+        num_batches = 1
+    else:
+        model_batch_size = cfg.eval.models_per_batch
+        num_batches = math.ceil(num_models / cfg.eval.models_per_batch)
+    formula_batch_size = cfg.eval.get("formulas_per_batch", None)
+
+    def eval_fn(models, env, env_params, ldba, batched_seqs, eval_key):
+        pbar = tqdm(
+            total=num_batches, desc="Evaluating models", unit="batch", leave=False
+        )
+
+        def update_pbar():
+            pbar.update(1)
+
+        def eval_seed(x):
+            key, model = x
+            num_formulas = ldba.num_states.shape[0]
+            formula_keys = jax.random.split(key, num_formulas)
+
+            def eval_formula(x):
+                key, ldba, seqs = x
+                return evaluator.eval(
+                    model,
+                    cfg.eval.deterministic,
+                    env,
+                    env_params,
+                    ldba,
+                    seqs,
+                    key=key,
+                )
+
+            res = jax.lax.map(
+                eval_formula,
+                (formula_keys, ldba, batched_seqs),
+                batch_size=formula_batch_size,
+            )
+            io_callback(update_pbar, None)
+            return res
+
+        keys = jax.random.split(eval_key, num_models)
+        return eqx_utils.filter_map(
+            eval_seed, (keys, models), batch_size=model_batch_size
+        )
+
     return eval_fn

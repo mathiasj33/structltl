@@ -54,3 +54,13 @@ def pytree_where(condition: jax.Array, x: PyTree, y: PyTree) -> PyTree:
         x,
         y,
     )
+
+
+def compute_size(module: eqx.Module) -> int:
+    """Compute the total number of bytes in an Equinox Module.
+
+    Args:
+        module: The Equinox Module to compute the size of.
+    """
+    params, _ = eqx.partition(module, eqx.is_array)
+    return jax.tree.reduce(lambda x, y: x + y.nbytes, params, initializer=0)

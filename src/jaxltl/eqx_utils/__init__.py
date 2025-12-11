@@ -1,4 +1,4 @@
-from .lax import filter_scan
+from .lax import filter_map, filter_scan
 from .serialization import (
     load,
     load_from_treedef,
@@ -6,10 +6,11 @@ from .serialization import (
     save,
     save_with_treedef,
 )
-from .utils import add_batch_dim, ensemble_index, pytree_where
+from .utils import add_batch_dim, compute_size, ensemble_index, pytree_where
 
 __all__ = [
     "filter_scan",
+    "filter_map",
     "load",
     "load_from_treedef",
     "save",
@@ -18,4 +19,5 @@ __all__ = [
     "add_batch_dim",
     "pytree_where",
     "ensemble_index",
+    "compute_size",
 ]

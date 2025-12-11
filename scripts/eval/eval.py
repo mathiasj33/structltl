@@ -1,7 +1,8 @@
-"""Evaluate trained models on a specified set of LTL formulas. Evaluates all models and
-formulas in parallel using vmap. Saves results to a CSV file and prints to stdout.
+"""Evaluate trained models on a specified set of LTL formulas.
 
-Also supports plotting a subset of trajectories for visual inspection (only for a single formula).
+Evaluates all models on all formulas. Saves results to a CSV
+file and prints to stdout. Use the batch_size config options
+to trade off speed and memory usage during evaluation.
 """
 
 import csv
@@ -27,12 +28,6 @@ logger = logging.getLogger(__name__)
 
 @hydra.main(version_base="1.1", config_path="../../conf", config_name="eval")
 def main(cfg: DictConfig):
-    if cfg.plotting.plot and len(cfg.formulas) > 1:
-        cfg.plotting.plot = False
-        logger.warning(
-            "Plotting is only supported for a single formula. Disabling plotting."
-        )
-
     # build environment
     env, env_params = build_env(cfg, None)
 
@@ -46,47 +41,31 @@ def main(cfg: DictConfig):
     # load models
     key = jax.random.key(0)
     key, model_key = jax.random.split(key)
-    models = load_batched_models(cfg, env, env_params, key=model_key)
+    models, num_models = load_batched_models(cfg, env, env_params, key=model_key)
 
     # set up evaluator
-    eval_fn = make_eval_fn(cfg)
+    eval_fn = make_eval_fn(cfg, num_models, return_trajs=False)
 
     # evaluate
     key, eval_key = jax.random.split(key)
     logger.info("Starting evaluation...")
     start = time.time()
-    metrics, returns, lengths, trajs = eval_fn(
+    metrics, returns, lengths, _ = eval_fn(
         models,
-        cfg.eval.deterministic,
         env,
         env_params,
         ldba,
         batched_seqs,
         eval_key,
-    )  # shape: (num_formulas, num_seeds, num_episodes)
+    )  # shape: (num_seeds, num_formulas, num_episodes)
     logger.info(f"Evaluation completed in {time.time() - start:.2f} seconds.")
 
     # log to stdout and save to CSV
     log_and_save_results(cfg, metrics, lengths)
 
-    # plot trajectories
-    if cfg.plotting.plot:
-        trajs = jax.tree.map(lambda x: x[0, 0, : cfg.plotting.num_trajectories], trajs)
-        lengths = jax.tree.map(
-            lambda x: x[0, 0, : cfg.plotting.num_trajectories], lengths
-        )
-        env.plot_trajectories(
-            trajs,
-            lengths,
-            env_params,
-            num_cols=cfg.plotting.cols,
-            num_rows=cfg.plotting.rows,
-        )
-
 
 def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array):
     """Logs aggregated results per formula and saves per-seed results to a CSV file."""
-
     csv_path = f"runs/{cfg.env.name}/{cfg.run}/eval_results.csv"
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
@@ -104,8 +83,8 @@ def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array
     rows = []
     for i, formula in enumerate(cfg.formulas):
         # Compute per-seed stats
-        metrics_i = metrics[i]  # (num_seeds, num_episodes)
-        lengths_i = lengths[i]  # (num_seeds, num_episodes)
+        metrics_i = metrics[:, i]  # (num_seeds, num_episodes)
+        lengths_i = lengths[:, i]  # (num_seeds, num_episodes)
 
         means = jnp.mean(metrics_i, axis=1)  # (num_seeds,)
 
