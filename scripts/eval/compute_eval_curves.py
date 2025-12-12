@@ -47,12 +47,12 @@ def main(cfg: DictConfig):
     # load models
     key = jax.random.key(0)
     key, model_key = jax.random.split(key)
-    models, checkpoint_steps = load_model_checkpoints(
+    models, num_seeds, checkpoint_steps = load_model_checkpoints(
         cfg, env, env_params, key=model_key
     )
 
     # set up evaluator
-    eval_fn = make_eval_fn(cfg)
+    eval_fn = make_eval_fn(cfg, num_seeds, return_trajs=False)
 
     # evaluate
     logger.info("Starting evaluation...")
@@ -66,7 +66,6 @@ def main(cfg: DictConfig):
         model = eqx.combine(model_params, static)
         metrics, returns, lengths, _ = eval_fn(
             model,
-            cfg.eval.deterministic,
             env,
             env_params,
             ldba,

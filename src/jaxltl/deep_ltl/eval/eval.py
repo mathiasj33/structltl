@@ -41,11 +41,21 @@ class Evaluator(eqx.Module):
     num_episodes: int  # Number of evaluation episodes. We run each episode in parallel.
     discount: float  # Discount factor for returns.
     return_trajs: bool  # Whether to return trajectories. May use a lot of memory.
+    # Whether to vmap the sequence choosing function. This is usually faster, but may
+    # use a lot of memory for large LDBAs.
+    vmap_choose_sequences: bool
 
-    def __init__(self, num_episodes: int, discount: float, return_trajs: bool = False):
+    def __init__(
+        self,
+        num_episodes: int,
+        discount: float,
+        return_trajs: bool = False,
+        vmap_choose_sequences: bool = True,
+    ):
         self.num_episodes = num_episodes
         self.discount = discount
         self.return_trajs = return_trajs
+        self.vmap_choose_sequences = vmap_choose_sequences
 
     @eqx.filter_jit
     def eval(
@@ -281,7 +291,10 @@ class Evaluator(eqx.Module):
             best_seq = jax.tree.map(lambda x: x[best_index], state_seqs)
             return best_seq
 
-        return jax.lax.map(choose_sequence_for_env, (ldba_state, obsv))
+        batch_size = self.num_episodes if self.vmap_choose_sequences else 1
+        return jax.lax.map(
+            choose_sequence_for_env, (ldba_state, obsv), batch_size=batch_size
+        )
 
     def _is_epsilon_enabled(
         self, env: EnvWrapper, seq: JaxReachAvoidSequence, assignment_index: jax.Array

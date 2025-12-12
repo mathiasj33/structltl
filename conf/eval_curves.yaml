@@ -11,3 +11,6 @@ eval:
   num_episodes: 16
   deterministic: false
   discount: 0.998
+  models_per_batch: all
+  formulas_per_batch: all
+  vmap_choose_sequences: true
