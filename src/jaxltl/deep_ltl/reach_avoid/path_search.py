@@ -123,6 +123,9 @@ def compute_sequences(  # noqa: PLR0915
         raise ValueError("LDBA not initialized.")
     state_to_sequences = {}
     for state in ldba.states:
+        if state not in ldba.state_to_scc:
+            state_to_sequences[state] = []
+            continue
         paths = dfs(state, [], {}, None)
         state_to_sequences[state] = [path.to_sequence(num_loops) for path in paths]
     return state_to_sequences

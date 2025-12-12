@@ -76,9 +76,10 @@ class JaxLDBA(NamedTuple):
         sink_states = np.zeros((ldba.num_states,), dtype=bool)
 
         for state in range(ldba.num_states):
-            scc = ldba.state_to_scc[state]
-            if scc.bottom and not scc.accepting:
-                sink_states[state] = True
+            if state in ldba.state_to_scc:
+                scc = ldba.state_to_scc[state]
+                if scc.bottom and not scc.accepting:
+                    sink_states[state] = True
             for transition in ldba.state_to_transitions[state]:
                 if transition.is_epsilon():
                     index = num_assignments
