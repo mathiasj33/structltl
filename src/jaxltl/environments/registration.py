@@ -1,12 +1,14 @@
 from jaxltl.environments.environment import Environment, EnvParams
 from jaxltl.environments.letter_world.letter_world import LetterWorld
 from jaxltl.environments.rgb_zone_env.rgb_zone_env import RGBZoneEnv
+from jaxltl.environments.warehouse_env.warehouse_env import WarehouseEnv
 from jaxltl.environments.zone_env.zone_env import ZoneEnv
 
 _name_to_env = {
     "ZoneEnv": ZoneEnv,
     "RGBZoneEnv": RGBZoneEnv,
     "LetterWorld": LetterWorld,
+    "WarehouseEnv": WarehouseEnv,
 }
 
 

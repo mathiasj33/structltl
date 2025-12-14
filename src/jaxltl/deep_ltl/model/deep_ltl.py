@@ -66,11 +66,7 @@ class DeepLTLModel(ActorCritic):
         )
         actor_key, critic_key = jax.random.split(key)
         joint_dim = self.env_net.output_size + 2 * config.sequence.embedding_dim
-        params = (
-            {"num_actions": act_space.n}
-            if isinstance(act_space, spaces.Discrete)
-            else {"action_dim": act_space.shape[0]}
-        )
+        params = self._get_actor_params_from_space(act_space)
         self.actor = hydra.utils.instantiate(
             config.actor, in_size=joint_dim, **params, key=actor_key
         )
@@ -81,6 +77,25 @@ class DeepLTLModel(ActorCritic):
             final_layer_activation=False,
             key=critic_key,
         )
+
+    @staticmethod
+    def _get_actor_params_from_space(act_space: Space) -> dict:
+        """Returns a dict of parameters required to instantiate the actor based on the
+        action space."""
+        if isinstance(act_space, spaces.Discrete):
+            return {"num_actions": act_space.n}
+        elif isinstance(act_space, spaces.Box):
+            return {"action_dim": act_space.shape[0]}
+        elif isinstance(act_space, spaces.Composite):
+            return {
+                "continuous_action_dim": act_space.continuous.shape[0],
+                "num_discrete_actions": act_space.discrete.n,
+            }
+        else:
+            raise NotImplementedError(
+                f"Actor parameters extraction not implemented for space type "
+                f"{type(act_space)}"
+            )
 
     @override
     def _get_action(

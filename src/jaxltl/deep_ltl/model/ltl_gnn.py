@@ -1,3 +1,4 @@
+from math import prod
 from typing import NamedTuple, cast, override
 
 import distrax
@@ -14,6 +15,8 @@ from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
     JaxGraphReachAvoidSequence,
     NodeData,
 )
+from jaxltl.environments import spaces
+from jaxltl.environments.spaces import Space
 from jaxltl.networks.gcn import GCN, NodeFeatures
 from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
@@ -31,19 +34,22 @@ class LTLGNNModel(ActorCritic):
     actor: ContinuousActor
     critic: MLP
 
+    _flatten_features: bool
+
     def __init__(
         self,
-        obs_dim: int,
-        action_dim: int,
+        obs_shape: tuple[int, ...],
+        act_space: Space,
         num_propositions: int,
         key: jax.Array,
         **kwargs,
     ):
         config = DictConfig(kwargs)
         key, env_key = jax.random.split(key)
-        self.env_net = hydra.utils.instantiate(
-            config.env_net, in_size=obs_dim, key=env_key
-        )
+        is_conv = "ConvNet" in config.env_net._target_
+        params = {"obs_shape": obs_shape} if is_conv else {"in_size": prod(obs_shape)}
+        self.env_net = hydra.utils.instantiate(config.env_net, **params, key=env_key)
+        self._flatten_features = not is_conv
 
         key, prop_emb_key, type_emb_key = jax.random.split(key, 3)
         embedding_dim = config.sequence.embedding_dim
@@ -78,8 +84,9 @@ class LTLGNNModel(ActorCritic):
 
         actor_key, critic_key = jax.random.split(key)
         joint_dim = config.env_net.out_size + 2 * embedding_dim
+        params = self._get_actor_params_from_space(act_space)
         self.actor = hydra.utils.instantiate(
-            config.actor, in_size=joint_dim, action_dim=action_dim, key=actor_key
+            config.actor, in_size=joint_dim, **params, key=actor_key
         )
         self.critic = hydra.utils.instantiate(
             config.critic,
@@ -88,6 +95,25 @@ class LTLGNNModel(ActorCritic):
             final_layer_activation=False,
             key=critic_key,
         )
+
+    @staticmethod
+    def _get_actor_params_from_space(act_space: Space) -> dict:
+        """Returns a dict of parameters required to instantiate the actor based on the
+        action space."""
+        if isinstance(act_space, spaces.Discrete):
+            return {"num_actions": act_space.n}
+        elif isinstance(act_space, spaces.Box):
+            return {"action_dim": act_space.shape[0]}
+        elif isinstance(act_space, spaces.Composite):
+            return {
+                "continuous_action_dim": act_space.continuous.shape[0],
+                "num_discrete_actions": act_space.discrete.n,
+            }
+        else:
+            raise NotImplementedError(
+                f"Actor parameters extraction not implemented for space type "
+                f"{type(act_space)}"
+            )
 
     @override
     def _get_action(
@@ -102,7 +128,11 @@ class LTLGNNModel(ActorCritic):
 
     @override
     def _compute_common_features(self, obs: PyTree) -> jax.Array:
-        x = self.flatten_features(obs.features)
+        x = (
+            self.flatten_features(obs.features)
+            if self._flatten_features
+            else obs.features.features
+        )
         x = jax.vmap(self.env_net)(x)
         emb = jax.vmap(self._compute_sequence_embedding)(obs.seq)
         return jnp.concatenate([x, emb], axis=-1)

@@ -1,5 +1,5 @@
 defaults:
-  - experiment: deep_ltl/letter
+  - experiment: deep_ltl/warehouse
   - hydra: simple
   - _self_
 
