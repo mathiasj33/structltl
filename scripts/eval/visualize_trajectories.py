@@ -64,6 +64,17 @@ def main(cfg: DictConfig):
     # plot trajectories
     trajs = jax.tree.map(partial(jnp.squeeze, axis=[0, 1]), trajs)
     lengths = jax.tree.map(partial(jnp.squeeze, axis=[0, 1]), lengths)
+
+    if cfg.replay:
+        renderer = env.get_renderer(env_params)
+        renderer.replay_trajectories(
+            trajs,
+            lengths,
+            frames_per_step=cfg.render.frames_per_step,
+            pause_between_episodes=cfg.render.pause_between_episodes,
+        )
+        renderer.close()
+
     env.plot_trajectories(
         trajs,
         lengths,

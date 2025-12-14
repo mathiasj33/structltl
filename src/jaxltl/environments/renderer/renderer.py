@@ -4,6 +4,7 @@ from typing import Literal, NamedTuple, override
 
 import jax
 import pygame
+from jaxtyping import PyTree
 
 from jaxltl.environments.environment import Environment, EnvParams
 from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
@@ -72,6 +73,47 @@ class BaseRenderer[TObsFeatures: NamedTuple, TResetOptions: NamedTuple](ABC):
         """Renders the environment in a loop."""
         pass
 
+    @abstractmethod
+    def render(self, state: WrapperState, obs: TObsFeatures | None):
+        """Renders the environment state."""
+        pass
+
+    def replay_trajectories(
+        self,
+        trajs: PyTree,
+        lengths: PyTree,
+        frames_per_step: int,
+        pause_between_episodes: float = 0.0,
+    ):
+        """Replays a set of trajectories.
+
+        Params:
+            trajs: A PyTree of batched environment states.
+            lengths: A PyTree of trajectory lengths.
+            frames_per_step: Number of frames to render per environment step.
+        """
+        clock = pygame.time.Clock()
+        num_trajectories = len(lengths)
+        for i in range(num_trajectories):
+            traj = jax.tree.map(lambda x, i=i: x[i], trajs)
+            length = lengths[i].item()
+            step = 0
+            frame = 0
+            paused_time = 0.0
+            while True:
+                clock.tick(180)
+                self.get_pressed_keys()  # handle quit events
+                frame += 1
+                if step >= length:
+                    paused_time += clock.get_time() / 1000.0
+                    if paused_time >= pause_between_episodes:
+                        break
+                elif frame >= frames_per_step:
+                    frame = 0
+                    step += 1
+                    state = jax.tree.map(lambda x, t=step: x[t], traj)
+                    self.render(state, None)
+
     def print_obs_and_props(
         self,
         obs: TObsFeatures,
@@ -113,12 +155,16 @@ class ContinuousTimeRenderer[TObsFeatures: NamedTuple, TResetOptions: NamedTuple
 ):
     """Base class for renderers with continuous time."""
 
+    def render(self, state: WrapperState, obs: TObsFeatures | None):
+        """Renders the environment state without interpolation."""
+        self.render_with_interpolation(state, state, obs, alpha=1.0)
+
     @abstractmethod
-    def render(
+    def render_with_interpolation(
         self,
         state: WrapperState,
         previous_state: WrapperState,
-        obs: TObsFeatures,
+        obs: TObsFeatures | None,
         alpha: float,
     ):
         """Renders the environment state. Use alpha for interpolation between frames."""
@@ -211,7 +257,7 @@ class ContinuousTimeRenderer[TObsFeatures: NamedTuple, TResetOptions: NamedTuple
 
             # Calculate interpolation factor
             alpha = float(time_accumulator / dt)
-            self.render(state, previous_state, obs.features, alpha)
+            self.render_with_interpolation(state, previous_state, obs.features, alpha)
 
             if print_debug_this_frame:
                 self.print_obs_and_props(
@@ -226,7 +272,7 @@ class DiscreteTimeRenderer[TObsFeatures: NamedTuple, TResetOptions: NamedTuple](
     before each step."""
 
     @abstractmethod
-    def render(self, state: WrapperState, obs: TObsFeatures):
+    def render(self, state: WrapperState, obs: TObsFeatures | None):
         """Renders the environment state."""
         pass
 

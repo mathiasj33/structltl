@@ -138,11 +138,11 @@ class Renderer(ContinuousTimeRenderer[ObsFeatures, ResetOptions]):
         return pos.astype(jnp.int32)
 
     @override
-    def render(
+    def render_with_interpolation(
         self,
         state: EnvState,
         previous_state: EnvState,
-        obs: ObsFeatures,
+        obs: ObsFeatures | None,
         alpha: float,
     ):
         """Render the environment state."""
@@ -160,7 +160,7 @@ class Renderer(ContinuousTimeRenderer[ObsFeatures, ResetOptions]):
         interpolated_angle = previous_state.angle + alpha * angle_diff
 
         self._draw_agent(interpolated_position, interpolated_angle, state)
-        if self.draw_lidar:
+        if self.draw_lidar and obs:
             self._draw_lidar(interpolated_position, obs, state)
 
         pygame.display.flip()
