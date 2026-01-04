@@ -31,7 +31,7 @@ def load_batched_models(
         batched model, batch size
     """
 
-    model_path = f"runs/{cfg.env.name}/{cfg.run}/models.eqx"
+    model_path = f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/models.eqx"
     metadata = eqx_utils.load_metadata(model_path)
     num_models = metadata["num_models"]
     model_fn = hydra.utils.instantiate(
@@ -76,7 +76,9 @@ def load_model_checkpoints(
 
     # load checkpoints
     step_to_models = defaultdict(dict)
-    checkpoint_folder = Path(f"runs/{cfg.env.name}/{cfg.run}/checkpoints")
+    checkpoint_folder = Path(
+        f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/checkpoints"
+    )
     for file in checkpoint_folder.iterdir():
         seed = re.search(r"seed(\d+)", file.name).group(1)  # type: ignore
         step = re.search(r"step(\d+)", file.name).group(1)  # type: ignore

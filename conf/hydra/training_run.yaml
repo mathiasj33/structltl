@@ -1,6 +1,6 @@
 # Hydra config for a training run that logs to a file in a structured output directory
 run:
-  dir: runs/${env.name}/${run}
+  dir: runs/${env.name}/${alg.name}/${run}
 
 job:
   chdir: true # Change the working directory to the output directory
