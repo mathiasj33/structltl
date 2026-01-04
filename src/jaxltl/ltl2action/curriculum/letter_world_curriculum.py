@@ -16,20 +16,11 @@ from jaxltl.ltl2action.eval.batching import FormulaClosureBatcher
 def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curriculum:
     return Curriculum(
         stages=[
-            # RandomCurriculumStage(
-            #     SimpleReachAvoidFormulaSampler(
-            #         depth=2,
-            #         reach=1,
-            #         avoid=1,
-            #         propositions=list(env.propositions),
-            #     ),
-            #     threshold=None,
-            # ),
             MultiRandomStage(
                 [
                     RandomCurriculumStage(
                         SimpleReachAvoidFormulaSampler(
-                            depth=(1, 4),
+                            depth=(1, 3),
                             reach=1,
                             avoid=0,
                             propositions=list(env.propositions),
@@ -38,7 +29,7 @@ def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curric
                     ),
                     RandomCurriculumStage(
                         SimpleReachAvoidFormulaSampler(
-                            depth=(1, 4),
+                            depth=(1, 2),
                             reach=1,
                             avoid=1,
                             propositions=list(env.propositions),

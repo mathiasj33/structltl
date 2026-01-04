@@ -12,7 +12,7 @@ class FormulaClosureGraph:
 
     def __init__(self, formula: str):
         self.formula = formula
-        self.formula_node = parse(formula)
+        self.formula_node = simplify(parse(formula))
         self.nodes: dict[LTLNode, ClosureGraphNode] = {}
 
     @property

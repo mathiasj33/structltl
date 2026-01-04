@@ -1,5 +1,6 @@
 import random
 
+import jaxltl
 from jaxltl.ltl2action.curriculum.curriculum import Sampler
 
 
@@ -68,3 +69,15 @@ class SimpleReachAvoidFormulaSampler(Sampler[str]):
                 tuple(sorted(self.propositions)),
             )
         )
+
+
+if __name__ == "__main__":
+    env = jaxltl.make("LetterWorld")[0]
+    sampler = SimpleReachAvoidFormulaSampler(
+        depth=1,
+        reach=1,
+        avoid=1,
+        propositions=list(env.propositions),
+    )
+    for _ in range(10):
+        print(sampler.sample())
