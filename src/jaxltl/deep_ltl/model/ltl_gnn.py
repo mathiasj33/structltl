@@ -10,7 +10,6 @@ from equinox import nn
 from jaxtyping import PyTree
 from omegaconf import DictConfig
 
-from jaxltl.deep_ltl.model.actor.continuous_actor import ContinuousActor
 from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
     JaxGraphReachAvoidSequence,
     NodeData,
@@ -20,6 +19,7 @@ from jaxltl.environments.spaces import Space
 from jaxltl.networks.gcn import GCN, NodeFeatures
 from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
+from jaxltl.rl.actor.continuous_actor import ContinuousActor
 from jaxltl.rl.actor_critic import ActorCritic
 
 # TODO: refactor this to be a separate alg

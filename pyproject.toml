@@ -42,6 +42,7 @@ seaborn = ">=0.13.2,<0.14"
 pytest = ">=8.4.2,<9"
 joblib = ">=1.5.2,<2"
 tqdm = ">=4.67.1,<5"
+spot = ">=2.14.4,<3"
 
 [tool.pixi.feature.gpu.system-requirements]
 cuda = "12"

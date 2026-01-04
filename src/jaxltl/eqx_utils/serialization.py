@@ -1,6 +1,7 @@
 """Serialization utilities for PyTrees with optional metadata."""
 
 import base64
+import dataclasses
 import json
 import pickle
 from pathlib import Path
@@ -118,4 +119,48 @@ def load_from_treedef(path: Path | str) -> PyTree:
 
         # 4. Reconstruct the model
         model = jax.tree.unflatten(treedef, leaves)
-    return model
+    return _reinstantiate(model)
+
+
+def _reinstantiate(tree: PyTree) -> PyTree:
+    """Recursively reinstantiate Equinox modules in a PyTree to ensure the pickled
+    class matches the current class definition.
+
+    Args:
+        tree (PyTree): The input PyTree.
+
+    Returns:
+        PyTree: The re-instantiated PyTree."""
+    if isinstance(tree, eqx.Module):
+        cls = type(tree)
+        init_kwargs = {}
+        for field in dataclasses.fields(tree):
+            if field.init:
+                value = getattr(tree, field.name)
+                init_kwargs[field.name] = _reinstantiate(value)
+        return cls(**init_kwargs)
+    elif _is_named_tuple_instance(tree):
+        cls = type(tree)
+        init_kwargs = {}
+        for field in tree._fields:
+            value = getattr(tree, field)
+            init_kwargs[field] = _reinstantiate(value)
+        return cls(**init_kwargs)
+    elif isinstance(tree, list | tuple):
+        return type(tree)(_reinstantiate(x) for x in tree)
+    elif isinstance(tree, dict):
+        return {k: _reinstantiate(v) for k, v in tree.items()}
+    else:
+        return tree
+
+
+def _is_named_tuple_instance(x):
+    """Check if x is an instance of a namedtuple."""
+    t = type(x)
+    b = t.__bases__
+    if len(b) != 1 or b[0] is not tuple:
+        return False
+    f = getattr(t, "_fields", None)
+    if not isinstance(f, tuple):
+        return False
+    return all(type(n) is str for n in f)

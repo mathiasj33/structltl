@@ -7,18 +7,19 @@ from jaxtyping import PyTree
 
 
 class ActorCritic(eqx.Module):
+    """Abstract base class for actor-critic models."""
+
     def __call__(self, obs: PyTree) -> tuple[distrax.Distribution, jax.Array]:
         """Forward pass through the actor and critic networks.
 
         Args:
             obs: Batched observations.
-            epsilon_mask: Batched mask whether epsilon actions are enabled.
 
         Returns:
             A tuple of (action distribution, state value).
         """
         features = self._compute_common_features(obs)
-        dist = self._get_action(features, obs.epsilon_mask)
+        dist = self._get_action(features, obs)
         value = self._get_value(features)
         return dist, value
 
@@ -27,12 +28,11 @@ class ActorCritic(eqx.Module):
 
         Args:
             obs: Batched observations.
-            epsilon_mask: Batched mask whether epsilon actions are enabled.
 
         Returns:
             Batched action distribution.
         """
-        return self._get_action(self._compute_common_features(obs), obs.epsilon_mask)
+        return self._get_action(self._compute_common_features(obs), obs)
 
     def get_value(self, obs: PyTree) -> jax.Array:
         """Get state value from the critic network.
@@ -46,14 +46,12 @@ class ActorCritic(eqx.Module):
         return self._get_value(self._compute_common_features(obs))
 
     @abstractmethod
-    def _get_action(
-        self, features: jax.Array, epsilon_mask: jax.Array
-    ) -> distrax.Distribution:
+    def _get_action(self, features: jax.Array, obs: PyTree) -> distrax.Distribution:
         """Get action distribution from the actor network given features.
 
         Args:
             features: Batched features.
-            epsilon_mask: Batched mask whether epsilon actions are enabled.
+            obs: Batched observations.
 
         Returns:
             Batched action distribution.

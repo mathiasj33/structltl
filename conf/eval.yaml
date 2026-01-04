@@ -6,7 +6,7 @@ defaults:
 
 run: deepltl
 env:
-  use_precomputed_resets: true # setting to true ignores default options
+  use_precomputed_resets: true
   precomputed_resets_path: sampled_resets_test.eqx
 eval:
   num_episodes: 512
@@ -14,4 +14,3 @@ eval:
   discount: 0.94
   models_per_batch: all
   formulas_per_batch: all
-  vmap_choose_sequences: true

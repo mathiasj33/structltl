@@ -1,5 +1,5 @@
 defaults:
-  - experiment: deep_ltl/warehouse
+  - experiment: deep_ltl/zones
   - hydra: training_run
   - _self_
 
@@ -7,5 +7,5 @@ run: tmp
 num_seeds: 5
 use_gpu: true # use gpu if available
 rl_alg:
-  total_timesteps: 5e6
+  total_timesteps: 20e6
 save_freq: 2e5

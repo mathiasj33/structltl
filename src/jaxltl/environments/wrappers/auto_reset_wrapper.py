@@ -3,14 +3,12 @@ from typing import Any, NamedTuple
 
 import equinox as eqx
 import jax
-import jax.numpy as jnp
 
 from jaxltl.environments.environment import Environment, EnvObservation, EnvTransition
 from jaxltl.environments.wrappers.wrapper import EnvWrapper, WrapperState
 
 
 class AutoResetState[TObsFeatures: NamedTuple](WrapperState):
-    timestep: jax.Array  # int
     initial_state: eqx.Module  # the initial state of the environment
     initial_obs: EnvObservation[TObsFeatures]
 
@@ -45,7 +43,6 @@ class AutoResetWrapper[
     """
 
     reset_strategy: ResetStrategy
-    use_term_trunc: bool
     auto_reset_options: TResetOptions | None
 
     def __init__(
@@ -55,21 +52,16 @@ class AutoResetWrapper[
             | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
         ),
         reset_strategy: ResetStrategy,
-        use_term_trunc: bool = True,
         auto_reset_options: TResetOptions | None = None,
     ):
         """
         Params:
             env: The environment to wrap.
             reset_strategy: The reset strategy to use.
-            use_term_trunc: Whether to separate termination and truncation, or treat
-                truncation as a form of termination. This is what original Gym environments
-                do.
             auto_reset_options: The reset options to use for automatic resets.
         """
         super().__init__(env)
         self.reset_strategy = reset_strategy
-        self.use_term_trunc = use_term_trunc
         self.auto_reset_options = auto_reset_options
 
     @eqx.filter_jit
@@ -102,7 +94,6 @@ class AutoResetWrapper[
         self, state: Any, obs: EnvObservation[TObsFeatures]
     ) -> AutoResetState[TObsFeatures]:
         return AutoResetState(
-            timestep=jnp.array(0, dtype=jnp.int32),
             state=state,
             initial_state=state,
             initial_obs=obs,
@@ -119,7 +110,6 @@ class AutoResetWrapper[
         key_step, key_reset = jax.random.split(key, 2)
         transition = super().step(key_step, state, action, params)
         next_state = AutoResetState(
-            timestep=state.timestep + 1,
             state=transition.state,
             initial_state=state.initial_state,
             initial_obs=state.initial_obs,
@@ -128,7 +118,6 @@ class AutoResetWrapper[
             case ResetStrategy.INITIAL:
                 state_re, obs_re = state.initial_state, state.initial_obs
                 state_re = AutoResetState(
-                    timestep=jnp.array(0, dtype=jnp.int32),
                     state=state_re,
                     initial_state=state.initial_state,
                     initial_obs=state.initial_obs,
@@ -142,24 +131,15 @@ class AutoResetWrapper[
                     key_reset, next_state, params, self.auto_reset_options
                 )
 
-        # Truncation
-        truncated: jax.Array = next_state.timestep >= params.max_steps_in_episode  # type: ignore
-        terminated = (
-            jnp.logical_or(transition.terminated, truncated)
-            if self.use_term_trunc
-            else transition.terminated
-        )
-
         # Auto-reset environment based on termination
-        done = jnp.logical_or(transition.terminated, truncated)
         transition = EnvTransition(
-            state=jax.lax.cond(done, lambda: state_re, lambda: next_state),
+            state=jax.lax.cond(transition.done, lambda: state_re, lambda: next_state),
             observation=jax.lax.cond(
-                done, lambda: obs_re, lambda: transition.observation
+                transition.done, lambda: obs_re, lambda: transition.observation
             ),
             reward=transition.reward,
-            terminated=terminated,
-            truncated=truncated,
+            terminated=transition.terminated,
+            truncated=transition.truncated,
             terminal_observation=transition.terminal_observation,
             propositions=transition.propositions,
             info=transition.info,

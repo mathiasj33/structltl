@@ -1,65 +1,50 @@
 from pathlib import Path
 
-import jax
-
-from jaxltl.deep_ltl.curriculum.curriculum import (
+from jaxltl.deep_ltl.curriculum.simple_samplers import (
+    SimpleReachAvoidSampler,
+    SimpleReachStaySampler,
+)
+from jaxltl.deep_ltl.utils.batching import ReachAvoidSequenceBatcher
+from jaxltl.environments.environment import Environment
+from jaxltl.environments.wrappers.wrapper import EnvWrapper
+from jaxltl.ltl2action.curriculum.curriculum import (
+    Curriculum,
     MultiRandomStage,
-    PrecomputedCurriculum,
     RandomCurriculumStage,
 )
-from jaxltl.deep_ltl.curriculum.zone_env_samplers import (
-    ZoneReachAvoidSampler,
-    ZoneReachStaySampler,
-)
-
-_num_assignments = 5
-_max_length = 3
 
 
-def make(load_path: str | Path | None = None):
-    return PrecomputedCurriculum(
+def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curriculum:
+    return Curriculum(
         [
             # 1. Simple reach tasks
             RandomCurriculumStage(
-                sampler=ZoneReachAvoidSampler(
+                sampler=SimpleReachAvoidSampler(
                     depth=1,
                     reach=1,
                     avoid=0,
-                    num_assignments=_num_assignments,
-                    max_length=_max_length,
+                    assignments=env.assignments,
                 ),
                 threshold=0.9,
             ),
             # 2. Reach tasks of depth 2
             RandomCurriculumStage(
-                sampler=ZoneReachAvoidSampler(
-                    depth=2,
-                    reach=1,
-                    avoid=0,
-                    num_assignments=_num_assignments,
-                    max_length=_max_length,
+                sampler=SimpleReachAvoidSampler(
+                    depth=2, reach=1, avoid=0, assignments=env.assignments
                 ),
                 threshold=0.95,
             ),
             # 3. Simple reach-avoid tasks
             RandomCurriculumStage(
-                sampler=ZoneReachAvoidSampler(
-                    depth=1,
-                    reach=1,
-                    avoid=1,
-                    num_assignments=_num_assignments,
-                    max_length=_max_length,
+                sampler=SimpleReachAvoidSampler(
+                    depth=1, reach=1, avoid=1, assignments=env.assignments
                 ),
                 threshold=0.95,
             ),
             # 4. Reach-avoid tasks of depth 2
             RandomCurriculumStage(
-                sampler=ZoneReachAvoidSampler(
-                    depth=2,
-                    reach=1,
-                    avoid=1,
-                    num_assignments=_num_assignments,
-                    max_length=_max_length,
+                sampler=SimpleReachAvoidSampler(
+                    depth=2, reach=1, avoid=1, assignments=env.assignments
                 ),
                 threshold=0.9,
             ),
@@ -67,21 +52,17 @@ def make(load_path: str | Path | None = None):
             MultiRandomStage(
                 stages=[
                     RandomCurriculumStage(
-                        sampler=ZoneReachAvoidSampler(
+                        sampler=SimpleReachAvoidSampler(
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                            assignments=env.assignments,
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
-                        sampler=ZoneReachStaySampler(
-                            num_stay=30,
-                            avoid=(0, 1),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                        sampler=SimpleReachStaySampler(
+                            num_stay=30, avoid=(0, 1), assignments=env.assignments
                         ),
                         threshold=None,
                     ),
@@ -93,21 +74,17 @@ def make(load_path: str | Path | None = None):
             MultiRandomStage(
                 stages=[
                     RandomCurriculumStage(
-                        sampler=ZoneReachAvoidSampler(
+                        sampler=SimpleReachAvoidSampler(
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                            assignments=env.assignments,
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
-                        sampler=ZoneReachStaySampler(
-                            num_stay=60,
-                            avoid=(0, 1),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                        sampler=SimpleReachStaySampler(
+                            num_stay=60, avoid=(0, 1), assignments=env.assignments
                         ),
                         threshold=None,
                     ),
@@ -119,21 +96,17 @@ def make(load_path: str | Path | None = None):
             MultiRandomStage(
                 stages=[
                     RandomCurriculumStage(
-                        sampler=ZoneReachAvoidSampler(
+                        sampler=SimpleReachAvoidSampler(
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                            assignments=env.assignments,
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
-                        sampler=ZoneReachStaySampler(
-                            num_stay=60,
-                            avoid=(0, 2),
-                            num_assignments=_num_assignments,
-                            max_length=_max_length,
+                        sampler=SimpleReachStaySampler(
+                            num_stay=60, avoid=(0, 2), assignments=env.assignments
                         ),
                         threshold=None,
                     ),
@@ -142,7 +115,8 @@ def make(load_path: str | Path | None = None):
                 threshold=None,
             ),
         ],
-        key=jax.random.key(0),
-        num_samples=int(1e6),
+        num_samples=int(1e5),
+        batcher=ReachAvoidSequenceBatcher(),
+        env=env,
         load_path=load_path,
     )

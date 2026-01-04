@@ -21,7 +21,7 @@ class VectorizeWrapper[
             | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]
         ),
     ):
-        super().__init__(env)
+        super().__init__(env, uses_state=False)
 
     # We currently don't vmap over options at this level (options here are global for
     # all parallel envs)

@@ -18,14 +18,13 @@ from omegaconf import DictConfig
 
 import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
-from jaxltl.deep_ltl.curriculum.curriculum import Curriculum
-from jaxltl.deep_ltl.wrappers.curriculum_wrapper import CurriculumWrapper
 from jaxltl.environments.spaces import Space
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
 from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
 from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
+from jaxltl.environments.wrappers.time_limit_wrapper import TimeLimitWrapper
 from jaxltl.hydra_utils.utils import resolve_default_options
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
@@ -45,18 +44,9 @@ def main(cfg: DictConfig):
     if cfg.env.use_precomputed_resets:
         resets_path = f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
         env = PrecomputedResetWrapper(env, env_params, resets_path)
-    if cfg.env.precomputed_curriculum_path is not None:
-        precomputed_curriculum_path = (
-            f"{DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_curriculum_path}"
-        )
-    else:
-        precomputed_curriculum_path = None
-    curriculum: Curriculum = hydra.utils.call(
-        cfg.curriculum, load_path=precomputed_curriculum_path
-    )
-    env = CurriculumWrapper(
-        env, curriculum, episode_window=cfg.curriculum_wrapper.episode_window
-    )
+    env = TimeLimitWrapper(env)
+
+    env = hydra.utils.call(cfg.alg.wrap_env, env, cfg, training=True)
     env = AutoResetWrapper(
         env, reset_strategy=ResetStrategy.FULL, auto_reset_options=default_options
     )

@@ -31,7 +31,7 @@ class PrecomputedResetWrapper[
         params: TEnvParams,
         path: str | Path,
     ):
-        super().__init__(env)
+        super().__init__(env, uses_state=False)
         self.num_reset_states = eqx_utils.load_metadata(path)["batch_dim"]
         state_template, _ = env.reset(jax.random.key(0), None, params=params)
         state_template = jax.tree.map(  # Add batch dimension

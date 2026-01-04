@@ -10,13 +10,13 @@ from jaxtyping import PyTree
 from omegaconf import DictConfig
 
 from jaxltl.deep_ltl.curriculum.sequence_sampler import JaxReachAvoidSequence
-from jaxltl.deep_ltl.model.actor.actor import Actor
 from jaxltl.environments import spaces
 from jaxltl.environments.spaces import Space
 from jaxltl.networks.conv_net import ConvNet
 from jaxltl.networks.deep_sets import DeepSets
 from jaxltl.networks.gru_cell import GRUCell
 from jaxltl.networks.mlp import MLP
+from jaxltl.rl.actor.actor import Actor
 from jaxltl.rl.actor_critic import ActorCritic
 
 
@@ -98,10 +98,8 @@ class DeepLTLModel(ActorCritic):
             )
 
     @override
-    def _get_action(
-        self, features: jax.Array, epsilon_mask: jax.Array
-    ) -> distrax.Distribution:
-        return self.actor(features, epsilon_mask)
+    def _get_action(self, features: jax.Array, obs: PyTree) -> distrax.Distribution:
+        return self.actor(features, obs.epsilon_mask)
 
     @override
     def _get_value(self, features: jax.Array) -> jax.Array:

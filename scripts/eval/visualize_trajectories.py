@@ -8,15 +8,16 @@ import equinox as eqx
 import hydra
 import jax
 from jax import numpy as jnp
+from jaxtyping import PyTree
 from omegaconf import DictConfig
 
-from jaxltl.deep_ltl.eval.utils import (
-    build_env,
-    load_batched_models,
-    make_eval_fn,
-    preprocess_formulas,
-    preprocess_graph_formulas,
+import jaxltl
+from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
+    PrecomputedResetWrapper,
 )
+from jaxltl.environments.wrappers.time_limit_wrapper import TimeLimitWrapper
+from jaxltl.environments.wrappers.vectorize_wrapper import VectorizeWrapper
+from jaxltl.eval.utils import load_batched_models, make_eval_fn
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +25,19 @@ logger = logging.getLogger(__name__)
 @hydra.main(version_base="1.1", config_path="../../conf", config_name="visualize_traj")
 def main(cfg: DictConfig):
     # build environment
-    env, env_params = build_env(cfg, None)
+    env, env_params = jaxltl.make(cfg.env.name)
+    if cfg.env.use_precomputed_resets:
+        resets_path = (
+            f"{jaxltl.DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
+        )
+        env = PrecomputedResetWrapper(env, env_params, resets_path)
+    env = TimeLimitWrapper(env)
+    env = hydra.utils.call(cfg.alg.wrap_env, env, cfg, training=False)
+    env = VectorizeWrapper(env)
 
-    # construct ldba and batched sequences for formula
-    # NOTE: consider replacing entirely with preprocess_graph_formulas in future
-    if "ltl_gnn" in cfg.model._target_:
-        ldba, batched_seqs = preprocess_graph_formulas([cfg.eval.formula], env)
-    else:
-        ldba, batched_seqs = preprocess_formulas([cfg.eval.formula], env)
+    formulas: PyTree = hydra.utils.call(
+        cfg.alg.preprocess_formulas, [cfg.eval.formula], env
+    )
 
     # load models
     key = jax.random.key(0)
@@ -44,19 +50,20 @@ def main(cfg: DictConfig):
     params = jax.tree.map(lambda x: x[None, ...], params)  # add batch dim
     model = eqx.combine(params, static)
 
+    agent = hydra.utils.instantiate(cfg.alg.agent, model)
+
     # set up evaluator
-    eval_fn = make_eval_fn(cfg, num_models=1, return_trajs=True)
+    eval_fn = make_eval_fn(cfg, num_models=1, num_formulas=1, return_trajs=True)
 
     # evaluate
     key, eval_key = jax.random.split(key)
     logger.info("Starting evaluation...")
     start = time.time()
-    metrics, returns, lengths, trajs = eval_fn(
-        model,
+    returns, disc_returns, lengths, trajs = eval_fn(
+        agent,
         env,
         env_params,
-        ldba,
-        batched_seqs,
+        formulas,
         eval_key,
     )  # shape: (1, 1, num_episodes)
     logger.info(f"Evaluation completed in {time.time() - start:.2f} seconds.")

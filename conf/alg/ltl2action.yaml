@@ -1,0 +1,10 @@
+name: ltl2action
+
+wrap_env:
+  _target_: jaxltl.ltl2action.wrappers.utils.wrap_env
+
+agent:
+  _target_: jaxltl.eval.agent.Agent.instantiate
+
+preprocess_formulas:
+  _target_: jaxltl.ltl2action.utils.preprocessing.preprocess_formulas

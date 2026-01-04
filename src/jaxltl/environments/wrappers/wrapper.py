@@ -36,12 +36,15 @@ class EnvWrapper[
     """Base class for environment wrappers."""
 
     _env: "EnvWrapper[TEnvParams, TObsFeatures, TResetOptions] | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]"
+    uses_state: bool  # whether the wrapper uses custom state that needs to be unwrapped
 
     def __init__(
         self,
         env: "EnvWrapper[TEnvParams, TObsFeatures, TResetOptions] | Environment[Any, TEnvParams, TObsFeatures, TResetOptions]",
+        uses_state: bool = True,
     ):
         self._env = env
+        self.uses_state = uses_state
 
     @eqx.filter_jit
     def reset(
@@ -51,6 +54,10 @@ class EnvWrapper[
         params: TEnvParams,
         options: TResetOptions | None = None,
     ) -> tuple[WrapperState, EnvObservation[TObsFeatures]]:
+        if state is None:
+            return self._env.reset(key, None, params, options)
+        if self.uses_state:
+            state = state.state  # type: ignore
         return self._env.reset(key, state, params, options)
 
     @eqx.filter_jit
@@ -71,6 +78,8 @@ class EnvWrapper[
         action: int | float | jax.Array,
         params: TEnvParams,
     ) -> EnvTransition[WrapperState, TObsFeatures]:
+        if self.uses_state:
+            state = state.state  # type: ignore
         return self._env.step(key, state, action, params)
 
     # provide proxy access to regular attributes of wrapped environment

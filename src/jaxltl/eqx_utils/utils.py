@@ -50,7 +50,11 @@ def pytree_where(condition: jax.Array, x: PyTree, y: PyTree) -> PyTree:
         A new pytree with elements selected from `x` and `y` based on `condition`.
     """
     return jax.tree.map(
-        lambda a, b: jnp.where(condition.reshape((-1,) + (1,) * (a.ndim - 1)), a, b),
+        lambda a, b: jnp.where(
+            condition.reshape((-1,) + (1,) * (a.ndim - 1)) if a.ndim > 0 else condition,
+            a,
+            b,
+        ),
         x,
         y,
     )

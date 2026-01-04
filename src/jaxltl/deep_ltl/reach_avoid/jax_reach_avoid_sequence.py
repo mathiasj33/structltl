@@ -4,6 +4,7 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
+from tqdm import tqdm
 
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import (
     EpsilonType,
@@ -75,6 +76,50 @@ class JaxReachAvoidSequence(eqx.Module):
         # Depth is determined by the assignment sequence
         padded_steps = self.reach[..., 0] == -1
         return jnp.sum(~padded_steps, axis=-1)
+
+    @classmethod
+    def from_reach_avoid_seqs(
+        cls,
+        seqs: list[ReachAvoidSequence],
+        env: Environment | EnvWrapper,
+    ) -> "JaxReachAvoidSequence":
+        """Converts a list of ReachAvoidSequences into a Jax reach-avoid sequence.
+
+        Args:
+            seqs: sequences to convert
+            env: environment to use for assignment indexing
+
+        Returns:
+            JaxReachAvoidSequence: with shape
+                reach: (num_seqs, max_length, num_assignments)
+                avoid: (num_seqs, max_length, num_assignments)
+        """
+        max_length = max(len(seq.reach_avoid) for seq in seqs)
+        reach = -np.ones((len(seqs), max_length, len(env.assignments)), dtype=np.int32)
+        avoid = -np.ones_like(reach)
+        repeat_last = np.ones((len(seqs),), dtype=np.int32)
+
+        assignment_to_idx = {
+            assignment: idx for idx, assignment in enumerate(env.assignments)
+        }
+        for seq_idx, seq in tqdm(
+            enumerate(seqs), desc="Converting reach-avoid sequences", total=len(seqs)
+        ):
+            for i, (r, a) in enumerate(seq.reach_avoid):
+                if isinstance(r, EpsilonType):
+                    reach[seq_idx, i, 0] = len(env.assignments)
+                else:
+                    indices = [assignment_to_idx[assignment] for assignment in r]
+                    reach[seq_idx, i, : len(indices)] = indices
+                avoid_indices = [assignment_to_idx[assignment] for assignment in a]
+                avoid[seq_idx, i, : len(avoid_indices)] = avoid_indices
+            repeat_last[seq_idx] = seq.repeat_last
+        return cls(
+            reach=jnp.array(reach),
+            avoid=jnp.array(avoid),
+            repeat_last=jnp.array(repeat_last),
+            last_index=jnp.zeros_like(repeat_last, dtype=jnp.int32),
+        )
 
     @classmethod
     def from_state_to_seqs(

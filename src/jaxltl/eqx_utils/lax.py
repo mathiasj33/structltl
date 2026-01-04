@@ -1,6 +1,7 @@
 """Equinox-compatible lax utilities."""
 
 from collections.abc import Callable
+from typing import Any
 
 import equinox as eqx
 import jax
@@ -47,3 +48,24 @@ def filter_map(f, xs, *, batch_size: int | None = None):
         return f(x)
 
     return jax.lax.map(aux, params, batch_size=batch_size)
+
+
+def filter_while_loop[T](
+    cond_fun: Callable[[T], Any], body_fun: Callable[[T], T], init_val: T
+) -> T:
+    """A wrapper around jax.lax.while_loop that supports equinox modules."""
+    params, static = eqx.partition(init_val, eqx.is_array)
+
+    def aux(params):
+        val = eqx.combine(params, static)
+        return cond_fun(val)
+
+    def body_aux(params):
+        val = eqx.combine(params, static)
+        new_val = body_fun(val)
+        new_params, _ = eqx.partition(new_val, eqx.is_array)
+        return new_params
+
+    final_params = jax.lax.while_loop(aux, body_aux, params)
+    final_val = eqx.combine(final_params, static)
+    return final_val

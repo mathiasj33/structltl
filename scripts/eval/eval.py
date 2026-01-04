@@ -13,14 +13,18 @@ import time
 import hydra
 import jax
 import jax.numpy as jnp
+from jaxtyping import PyTree
 from omegaconf import DictConfig
 
-from jaxltl.deep_ltl.eval.utils import (
-    build_env,
+import jaxltl
+from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
+    PrecomputedResetWrapper,
+)
+from jaxltl.environments.wrappers.time_limit_wrapper import TimeLimitWrapper
+from jaxltl.environments.wrappers.vectorize_wrapper import VectorizeWrapper
+from jaxltl.eval.utils import (
     load_batched_models,
     make_eval_fn,
-    preprocess_formulas,
-    preprocess_graph_formulas,
 )
 
 logger = logging.getLogger(__name__)
@@ -29,66 +33,72 @@ logger = logging.getLogger(__name__)
 @hydra.main(version_base="1.1", config_path="../../conf", config_name="eval")
 def main(cfg: DictConfig):
     # build environment
-    env, env_params = build_env(cfg, None)
+    env, env_params = jaxltl.make(cfg.env.name)
+    if cfg.env.use_precomputed_resets:
+        resets_path = (
+            f"{jaxltl.DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
+        )
+        env = PrecomputedResetWrapper(env, env_params, resets_path)
+    env = TimeLimitWrapper(env)
+    env = hydra.utils.call(cfg.alg.wrap_env, env, cfg, training=False)
+    env = VectorizeWrapper(env)
 
-    # construct ldbas and batched sequences for all formulas
-    # NOTE: consider replacing entirely with preprocess_graph_formulas in future
-    if "ltl_gnn" in cfg.model._target_:
-        ldba, batched_seqs = preprocess_graph_formulas(cfg.formulas, env)
-    else:
-        ldba, batched_seqs = preprocess_formulas(cfg.formulas, env)
+    formulas: PyTree = hydra.utils.call(cfg.alg.preprocess_formulas, cfg.formulas, env)
 
     # load models
     key = jax.random.key(0)
     key, model_key = jax.random.split(key)
     models, num_models = load_batched_models(cfg, env, env_params, key=model_key)
+    agents = hydra.utils.instantiate(cfg.alg.agent, models)
 
     # set up evaluator
-    eval_fn = make_eval_fn(cfg, num_models, return_trajs=False)
+    eval_fn = make_eval_fn(
+        cfg, num_models, num_formulas=len(cfg.formulas), return_trajs=False
+    )
 
     # evaluate
     key, eval_key = jax.random.split(key)
     logger.info("Starting evaluation...")
     start = time.time()
-    metrics, returns, lengths, _ = eval_fn(
-        models,
+    returns, disc_returns, lengths, _ = eval_fn(
+        agents,
         env,
         env_params,
-        ldba,
-        batched_seqs,
+        formulas,
         eval_key,
     )  # shape: (num_seeds, num_formulas, num_episodes)
+    jax.block_until_ready(returns)
     logger.info(f"Evaluation completed in {time.time() - start:.2f} seconds.")
 
     # log to stdout and save to CSV
-    log_and_save_results(cfg, metrics, lengths)
+    log_and_save_results(cfg, returns, lengths)
 
 
-def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array):
+def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array):
     """Logs aggregated results per formula and saves per-seed results to a CSV file."""
     csv_path = f"runs/{cfg.env.name}/{cfg.run}/eval_results.csv"
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
-    num_seeds = int(metrics.shape[1])
+    num_seeds = int(returns.shape[0])
     seeds = list(range(num_seeds))
 
     fieldnames = [
         "seed",
         "deterministic",
         "formula",
-        "metric",
+        "return",
         "length",
     ]
 
     rows = []
     for i, formula in enumerate(cfg.formulas):
         # Compute per-seed stats
-        metrics_i = metrics[:, i]  # (num_seeds, num_episodes)
+        returns_i = returns[:, i]  # (num_seeds, num_episodes)
         lengths_i = lengths[:, i]  # (num_seeds, num_episodes)
 
-        means = jnp.mean(metrics_i, axis=1)  # (num_seeds,)
+        means = jnp.mean(returns_i, axis=1)  # (num_seeds,)
 
-        success_mask = metrics_i > 0  # (num_seeds, num_episodes)
+        success_mask = returns_i > 0  # (num_seeds, num_episodes)
         success_counts = jnp.sum(success_mask, axis=1)  # (num_seeds,)
         sum_lengths = jnp.sum(lengths_i * success_mask, axis=1)
         avg_lengths = jnp.where(
@@ -110,7 +120,7 @@ def log_and_save_results(cfg: DictConfig, metrics: jax.Array, lengths: jax.Array
                     "seed": seed,
                     "deterministic": bool(cfg.eval.deterministic),
                     "formula": formula,
-                    "metric": float(means[seed]),
+                    "return": float(means[seed]),
                     "length": float(avg_lengths[seed]),
                 }
             )

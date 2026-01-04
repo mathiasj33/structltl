@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+
 from jaxltl.ltl.logic import Assignment
 
 AssignmentSet = frozenset[Assignment]
@@ -22,7 +24,7 @@ class ReachAvoidSequence:
 
     def __init__(
         self,
-        reach_avoid: list[tuple[AssignmentSet | EpsilonType, AssignmentSet]],
+        reach_avoid: Sequence[tuple[AssignmentSet | EpsilonType, AssignmentSet]],
         repeat_last: int = 0,
     ):
         """

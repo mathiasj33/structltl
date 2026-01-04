@@ -9,7 +9,7 @@ curriculum:
   _target_: jaxltl.deep_ltl.curriculum.zone_env_curriculum.make
 
 curriculum_wrapper:
-  episode_window: 512
+  episode_window: 256
 
 model:
   _target_: jaxltl.deep_ltl.model.deep_ltl.DeepLTLModel
@@ -20,11 +20,12 @@ model:
     out_size: 64
     activation: ${act:tanh}
   actor:
-    _target_: jaxltl.deep_ltl.model.actor.continuous_actor.ContinuousActor
+    _target_: jaxltl.rl.actor.continuous_actor.ContinuousActor
     hidden_sizes: [64, 64, 64]
     hidden_activation: ${act:relu}
     output_activation: ${act:tanh}
     state_dependent_std: true
+    use_epsilon: true
   critic:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [64, 64]

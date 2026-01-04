@@ -20,9 +20,10 @@ model:
     kernel_size: [2, 2]
     activation: ${act:relu}
   actor:
-    _target_: jaxltl.deep_ltl.model.actor.discrete_actor.DiscreteActor
+    _target_: jaxltl.rl.actor.discrete_actor.DiscreteActor
     hidden_sizes: [64, 64, 64]
     activation: ${act:relu}
+    use_epsilon: false
   critic:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [64, 64]

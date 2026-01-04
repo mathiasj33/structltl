@@ -4,21 +4,23 @@ import distrax
 import jax
 from jax.nn.initializers import Initializer
 
-from jaxltl.deep_ltl.model.actor.actor import Actor
 from jaxltl.deep_ltl.model.epsilon_distribution import EpsilonDistribution
 from jaxltl.networks.mlp import MLP
+from jaxltl.rl.actor.actor import Actor
 
 
 class DiscreteActor(Actor):
     encoder: MLP
     action_probs: MLP
-    epsilon_prob: MLP
+    epsilon_prob: MLP | None
+    use_epsilon: bool
 
     def __init__(
         self,
         in_size: int,
         num_actions: int,
         hidden_sizes: list[int],
+        use_epsilon: bool,
         activation: Callable[[jax.Array], jax.Array] = jax.nn.relu,
         weight_init: Initializer | None = jax.nn.initializers.orthogonal(),
         bias_init: Initializer | None = jax.nn.initializers.zeros,
@@ -45,15 +47,19 @@ class DiscreteActor(Actor):
             final_layer_activation=False,
             key=action_key,
         )
-        self.epsilon_prob = MLP(
-            hidden_sizes[-1],
-            1,
-            [],
-            weight_init=weight_init,
-            bias_init=bias_init,
-            final_layer_activation=False,
-            key=eps_key,
-        )
+        self.use_epsilon = use_epsilon
+        if use_epsilon:
+            self.epsilon_prob = MLP(
+                hidden_sizes[-1],
+                1,
+                [],
+                weight_init=weight_init,
+                bias_init=bias_init,
+                final_layer_activation=False,
+                key=eps_key,
+            )
+        else:
+            self.epsilon_prob = None
 
     def __call__(
         self, features: jax.Array, epsilon_mask: jax.Array
@@ -64,6 +70,9 @@ class DiscreteActor(Actor):
         """
         encoded = jax.vmap(self.encoder)(features)
         action_probs = jax.vmap(self.action_probs)(encoded)
-        log_eps = jax.vmap(self.epsilon_prob)(encoded)
         action_dist = distrax.Categorical(logits=action_probs)
-        return EpsilonDistribution(action_dist, log_eps.squeeze(-1), epsilon_mask)
+        if self.use_epsilon:
+            log_eps = jax.vmap(self.epsilon_prob)(encoded)  # type: ignore
+            return EpsilonDistribution(action_dist, log_eps.squeeze(-1), epsilon_mask)
+        else:
+            return action_dist
