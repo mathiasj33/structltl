@@ -23,7 +23,7 @@ model:
     _target_: jaxltl.rl.actor.discrete_actor.DiscreteActor
     hidden_sizes: [64, 64, 64]
     activation: ${act:relu}
-    use_epsilon: false
+    use_epsilon: true
   critic:
     _target_: jaxltl.networks.mlp.MLP
     hidden_sizes: [64, 64]
@@ -32,7 +32,7 @@ model:
     embedding_dim: 32
     deep_sets:
       _target_: jaxltl.networks.deep_sets.DeepSets
-      hidden_sizes: [32]
+      hidden_sizes: [32, 32]
       out_size: 32
       activation: ${act:relu}
 
@@ -45,7 +45,7 @@ rl_alg:
   gamma: 0.94
   gae_lambda: 0.95
   clip_eps: 0.2
-  ent_coef: 0.01
+  ent_coef: 0.05
   vf_coef: 0.5
   lr: 3e-4
   max_grad_norm: 0.5

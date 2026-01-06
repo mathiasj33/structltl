@@ -118,6 +118,12 @@ def make_callback(cfg: DictConfig):
         ]
         avg_returns = jnp.mean(window_returns)
 
+        # positive returns
+        window_pos_returns = metric["positive_return"][metric["done"]][
+            -cfg.curriculum_wrapper.episode_window :
+        ]
+        avg_pos_returns = jnp.mean(window_pos_returns)
+
         window_stages = metric["curriculum_stage"][metric["done"]][
             -cfg.curriculum_wrapper.episode_window :
         ]
@@ -127,7 +133,7 @@ def make_callback(cfg: DictConfig):
 
         # log progress
         logger.info(
-            f"seed {seed} | step {step} | ret {avg_returns:.2f} | stage {avg_stage:.2f} ({min_stage:}, {max_stage:}) | sps {int(sps)} | eta {remaining}"
+            f"seed {seed} | step {step} | ret {avg_returns:.2f} | sr {avg_pos_returns:.2f} | stage {avg_stage:.2f} ({min_stage:}, {max_stage:}) | sps {int(sps)} | eta {remaining}"
         )
 
         # save checkpoint
@@ -138,6 +144,7 @@ def make_callback(cfg: DictConfig):
 
         # log to csv
         return_values = metric["episode_return"][metric["done"]].tolist()
+        pos_return_values = metric["positive_return"][metric["done"]].tolist()
         lengths = metric["episode_length"][metric["done"]].tolist()
         stages = metric["curriculum_stage"][metric["done"]].tolist()
         timesteps = (
@@ -147,6 +154,7 @@ def make_callback(cfg: DictConfig):
             {
                 "timestep": timesteps,
                 "return": return_values,
+                "positive_return": pos_return_values,
                 "length": lengths,
                 "curriculum_stage": stages,
             }
