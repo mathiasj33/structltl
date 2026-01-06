@@ -1,10 +1,10 @@
 defaults:
-  - experiment: deep_ltl/warehouse
+  - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
+  - optional local: local
 
 env:
-  use_precomputed_resets: false # setting to true ignores default options
-  precomputed_resets_path: sampled_resets_test.eqx
+  use_precomputed_resets: false
 policy: "teleop" # "teleop" or "random"
 print_debug: true

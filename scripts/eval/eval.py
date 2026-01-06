@@ -76,7 +76,7 @@ def main(cfg: DictConfig):
 
 def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array):
     """Logs aggregated results per formula and saves per-seed results to a CSV file."""
-    csv_path = f"runs/{cfg.env.name}/{cfg.run}/eval_results.csv"
+    csv_path = f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/eval_results.csv"
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
     num_seeds = int(returns.shape[0])

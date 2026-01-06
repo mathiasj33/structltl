@@ -2,11 +2,13 @@ defaults:
   - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
+  - optional local: local
+
 env:
-  use_precomputed_resets: true # setting to true ignores default options
+  use_precomputed_resets: true
   precomputed_resets_path: sampled_resets_test.eqx
 
-run: deepltl
+run: main
 
 eval:
   formula: "GF red & GF green"

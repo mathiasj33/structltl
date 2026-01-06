@@ -3,8 +3,9 @@ defaults:
   - formulas: zones/finite
   - hydra: simple
   - _self_
+  - optional local: local
 
-run: deepltl
+run: main
 env:
   use_precomputed_resets: true
   precomputed_resets_path: sampled_resets_test.eqx

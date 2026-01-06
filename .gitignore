@@ -1,5 +1,5 @@
 # Project-specific ignores
-local/
+/local/
 outputs/
 runs/
 *.zip
@@ -7,6 +7,7 @@ data/
 dependencies/
 ldba.png
 .VSCodeCounter/
+conf/local/local.yaml
 
 # Pixi environments
 .pixi

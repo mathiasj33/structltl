@@ -1,9 +1,10 @@
 defaults:
-  - experiment: ltl2action/zones
+  - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
+  - optional local: local
 
-run: newltl2action
+run: main
 env:
   use_precomputed_resets: true
   precomputed_resets_path: sampled_resets_test.eqx
