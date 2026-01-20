@@ -7,7 +7,14 @@ data/
 dependencies/
 ldba.png
 .VSCodeCounter/
-conf/local/local.yaml
+
+# Local config files
+eval_curves.yaml
+eval.yaml
+precompute.yaml
+train.yaml
+visualize_env.yaml
+visualize_traj.yaml
 
 # Pixi environments
 .pixi

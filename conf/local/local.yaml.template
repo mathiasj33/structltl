@@ -1,8 +1,0 @@
-# @package _global_
-
-defaults:
-  - override /experiment: deep_ltl/letter
-  - override /formulas: letter/finite
-
-run: main
-replay: false

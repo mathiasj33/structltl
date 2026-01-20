@@ -3,7 +3,6 @@ defaults:
   - formulas: zones/finite
   - hydra: simple
   - _self_
-  - optional local: local
 
 run: main
 env:

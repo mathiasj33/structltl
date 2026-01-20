@@ -2,7 +2,6 @@ defaults:
   - experiment: deep_ltl/zones
   - hydra: simple
   - _self_
-  - optional local: local
 
 env:
   use_precomputed_resets: false
