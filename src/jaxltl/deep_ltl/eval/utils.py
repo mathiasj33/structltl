@@ -4,9 +4,6 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl.deep_ltl.reach_avoid import path_search
-from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
-    GraphReachAvoidSequence,
-)
 from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
     JaxGraphReachAvoidSequence,
 )
@@ -14,6 +11,9 @@ from jaxltl.environments.environment import Environment
 from jaxltl.environments.wrappers.wrapper import EnvWrapper
 from jaxltl.ltl.automata import ltl2ldba
 from jaxltl.ltl.automata.jax_ldba import JaxLDBA
+from jaxltl.struct_ltl.reach_avoid.boolean_reach_avoid_sequence import (
+    BooleanReachAvoidSequence,
+)
 
 
 def preprocess_graph_formulas(
@@ -44,14 +44,14 @@ def _preprocess_graph_formula(
     state_to_graph_seqs = {}
     for state, seq_list in state_to_seqs.items():
         state_to_graph_seqs[state] = [
-            GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
+            BooleanReachAvoidSequence.from_reach_avoid_sequence(seq, env)
             for seq in seq_list
         ]
 
     batched_seqs = JaxGraphReachAvoidSequence.from_state_to_seqs(
         state_to_graph_seqs,
         env.propositions,
-        env.assignments,
+        env.assignments(),
         env.max_nodes,
         env.max_edges,
     )
@@ -60,7 +60,7 @@ def _preprocess_graph_formula(
 
 def _build_ldba(formula: str, env: Environment | EnvWrapper):
     ldba = ltl2ldba(formula, env.propositions)
-    ldba.prune(env.assignments)
+    ldba.prune(env.assignments())
     ldba.complete_sink_state()
     ldba.compute_sccs()
     return ldba

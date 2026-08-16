@@ -84,9 +84,9 @@ class JaxFormulaClosureGraph(eqx.Module):
 
         # Use numpy arrays and convert at the end for efficiency
         initial_states = np.zeros(len(closures), dtype=np.int32)
-        num_assignments = len(env.assignments)
+        num_assignments = len(env.assignments())
         assignment_to_index = {
-            assignment: idx for idx, assignment in enumerate(env.assignments)
+            assignment: idx for idx, assignment in enumerate(env.assignments())
         }
         max_closure_nodes = max(closure.num_nodes for closure in closures)
         transitions = -np.ones(

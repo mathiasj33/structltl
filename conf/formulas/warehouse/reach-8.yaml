@@ -1,0 +1,3 @@
+- "F ((region_a & vase & crate) & F ((region_a & !(vase)) & F ((door & !(crate)) & F ((region_a & !(vase)) & F ((door & crate) & F ((region_b & crate) & F ((region_a & vase) & F (region_a & !(vase)))))))))"
+- "F ((region_a & !(crate)) & F ((door & vase) & F ((region_a & !(crate)) & F ((region_b & !(vase)) & F (vase & F ((door & !(vase)) & F ((door & vase) & F (door & !(vase)))))))))"
+- "F ((region_a & vase) & F ((region_a & !(vase)) & F (vase & F ((door & !(vase)) & F ((region_b & !(vase)) & F ((door & vase & crate) & F ((region_b & !(vase)) & F (door & crate))))))))"

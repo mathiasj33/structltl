@@ -72,15 +72,41 @@ def main(cfg: DictConfig):
     trajs = jax.tree.map(partial(jnp.squeeze, axis=[0, 1]), trajs)
     lengths = jax.tree.map(partial(jnp.squeeze, axis=[0, 1]), lengths)
 
+    idx = jnp.array([0, 1, 3, 5])
+    trajs = jax.tree.map(lambda x: x[idx], trajs)
+    lengths = jax.tree.map(lambda x: x[idx], lengths)
+
     if cfg.replay:
-        renderer = env.get_renderer(env_params)
-        renderer.replay_trajectories(
-            trajs,
-            lengths,
-            frames_per_step=cfg.render.frames_per_step,
-            pause_between_episodes=cfg.render.pause_between_episodes,
-        )
-        renderer.close()
+        if cfg.render.backend == "threejs":
+            if env.name != "WarehouseEnv":
+                raise ValueError("Three.js replay is only available for WarehouseEnv.")
+            from jaxltl.environments.warehouse_env.threejs.replay import (
+                replay_trajectories,
+            )
+
+            output_dir = replay_trajectories(
+                trajs,
+                lengths,
+                env_params,  # type: ignore
+                frames_per_step=cfg.render.frames_per_step,
+                pause_between_episodes=cfg.render.pause_between_episodes,
+            )
+            serve_cmd = f"pixi run python -m http.server 8000 --directory {output_dir}"
+            logger.info("Three.js replay assets written to %s", output_dir)
+            logger.info("Serve them with: %s", serve_cmd)
+            logger.info("Then open: http://localhost:8000/")
+            logger.info(
+                "Alternatively, call pixi run threejs to serve and open in one step."
+            )
+        else:
+            renderer = env.get_renderer(env_params)
+            renderer.replay_trajectories(
+                trajs,
+                lengths,
+                frames_per_step=cfg.render.frames_per_step,
+                pause_between_episodes=cfg.render.pause_between_episodes,
+            )
+            renderer.close()
 
     env.plot_trajectories(
         trajs,

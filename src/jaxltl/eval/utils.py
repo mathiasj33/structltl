@@ -24,6 +24,7 @@ def load_batched_models(
     env_params: EnvParams,
     *,
     key: jax.Array,
+    path: Path | None = None,
 ) -> tuple[ActorCritic, int]:
     """Load a batched model (over seeds) from disk.
 
@@ -31,14 +32,15 @@ def load_batched_models(
         batched model, batch size
     """
 
-    model_path = f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/models.eqx"
+    model_path = path or f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/models.eqx"
     metadata = eqx_utils.load_metadata(model_path)
     num_models = metadata["num_models"]
     model_fn = hydra.utils.instantiate(
         cfg.model,
         obs_shape=env.observation_space(env_params).shape,
-        num_assignments=len(env.assignments),
+        num_assignments=len(env.assignments()),
         num_propositions=len(env.propositions),
+        env_params=env_params,
         key=key,
         _partial_=True,
     )
@@ -66,8 +68,9 @@ def load_model_checkpoints(
     model_fn = hydra.utils.instantiate(
         cfg.model,
         obs_shape=env.observation_space(env_params).shape,
-        num_assignments=len(env.assignments),
+        num_assignments=len(env.assignments()),
         num_propositions=len(env.propositions),
+        env_params=env_params,
         _partial_=True,
     )
     make_model = lambda key: model_fn(act_space=env.action_space(env_params), key=key)

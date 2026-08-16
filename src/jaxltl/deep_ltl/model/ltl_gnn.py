@@ -58,8 +58,8 @@ class LTLGNNModel(ActorCritic):
             embedding_size=embedding_dim,
             key=prop_emb_key,
         )
-        # AND, OR, NOT, EMPTY, EPSILON
-        num_node_types = 5
+        # AND, OR, NOT, EMPTY, FALSE, EPSILON
+        num_node_types = 6  # TODO: toggle false learnable or not
         self.type_embedding = nn.Embedding(
             num_embeddings=num_node_types,
             embedding_size=embedding_dim,

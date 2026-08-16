@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Warehouse Environment - Three.js Renderer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="canvas-container"></div>
+
+    <div id="info">
+      <h1>Warehouse Environment</h1>
+      <p id="info-status">Replay visualization</p>
+    </div>
+
+    <div id="legend">
+      <h2>Legend</h2>
+      <div class="legend-item">
+        <div class="legend-color" style="background: #d9944d"></div>
+        <span>Agent</span>
+      </div>
+      <div class="legend-item">
+        <div
+          class="legend-color"
+          style="background: #e6b84d; border-radius: 50%"
+        ></div>
+        <span>Vase</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background: #a66633"></div>
+        <span>Crate</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background: #cc3333"></div>
+        <span>Region A</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background: #33aa33"></div>
+        <span>Region B</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-color" style="background: #8833aa"></div>
+        <span>Door</span>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div class="control-group">
+        <kbd>Left Click + Drag</kbd>
+        <span>Rotate</span>
+      </div>
+      <div class="control-group">
+        <kbd>Right Click + Drag</kbd>
+        <span>Pan</span>
+      </div>
+      <div class="control-group">
+        <kbd>Scroll</kbd>
+        <span>Zoom</span>
+      </div>
+      <div class="control-group">
+        <kbd>Space</kbd>
+        <span>Pause/Resume</span>
+      </div>
+      <div class="control-group">
+        <kbd>←</kbd>
+        <span>Prev</span>
+      </div>
+      <div class="control-group">
+        <kbd>→</kbd>
+        <span>Next</span>
+      </div>
+    </div>
+
+    <div id="playback-controls">
+      <button id="prev-episode-btn">←</button>
+      <button id="toggle-play-btn">⏸︎</button>
+      <button id="next-episode-btn">→</button>
+    </div>
+
+    <button id="screenshot-btn">Save Screenshot</button>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@v0.182.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@v0.182.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <script id="warehouse-data" type="application/json">
+      __WAREHOUSE_DATA__
+    </script>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

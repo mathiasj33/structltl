@@ -13,11 +13,14 @@ class LTLParser:
         self.current_token: LTLToken | None = (
             self.tokens[self.pos] if self.tokens else None
         )
+        self.formula = formula
 
     def parse(self) -> "LTLNode":
         result = self.parse_expression()
         if self.current_token is not None:
-            raise SyntaxError(f"Unexpected token at the end: {self.current_token}")
+            raise SyntaxError(
+                f"Unexpected token at the end: {self.current_token}. Formula: {self.formula}"
+            )
         return result
 
     def parse_expression(self) -> "LTLNode":
@@ -65,7 +68,7 @@ class LTLParser:
         elif self.match(LTLTokenType.LPAREN):
             node = self.parse_expression()
             if not self.match(LTLTokenType.RPAREN):
-                raise SyntaxError("Expected ')'")
+                raise SyntaxError(f"Expected ')'. Formula: {self.formula}")
             return node
         elif self.match(LTLTokenType.TRUE):
             return TrueNode()
@@ -80,7 +83,9 @@ class LTLParser:
             self.next_token()
             return node
         else:
-            raise SyntaxError(f"Unexpected token: {self.current_token}")
+            raise SyntaxError(
+                f"Unexpected token: {self.current_token}. Formula: {self.formula}"
+            )
 
     def match(self, token_type: LTLTokenType) -> bool:
         if self.current_token and self.current_token.type == token_type:

@@ -19,6 +19,7 @@ class EvalState(NamedTuple):
     disc_returns: jax.Array  # (num_episodes,) discounted returns
     lengths: jax.Array  # (num_episodes,) lengths of episodes
     completed: jax.Array  # (num_episodes,) whether episode is completed
+    num_violations: jax.Array  # scalar, number of violations across all episodes
 
 
 class EvalResetOptions(NamedTuple):
@@ -58,7 +59,7 @@ class Evaluator(eqx.Module):
         env_params: EnvParams,
         task: PyTree,
         key: jax.Array,
-    ) -> tuple[jax.Array, jax.Array, jax.Array, PyTree | None]:
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array, PyTree | None]:
         """Evaluate the model in parallel on the environment.
 
         Returns:
@@ -120,6 +121,9 @@ class Evaluator(eqx.Module):
                 + jnp.power(self.discount, index) * transition.reward
             )
             lengths = eval_state.lengths + jnp.where(eval_state.completed, 0, 1)
+            is_sink: jax.Array = transition.info["is_sink"].astype(jnp.int32)
+            violations = jnp.where(eval_state.completed, 0, is_sink)
+            total_violations = eval_state.num_violations + jnp.sum(violations)
 
             # update completed
             completed = jnp.logical_or(eval_state.completed, transition.done)
@@ -129,6 +133,7 @@ class Evaluator(eqx.Module):
                 disc_returns=disc_returns,
                 lengths=lengths,
                 completed=completed,
+                num_violations=total_violations,
             )
             return (
                 agent,
@@ -165,6 +170,7 @@ class Evaluator(eqx.Module):
             disc_returns=jnp.zeros((self.num_episodes,), dtype=jnp.float32),
             lengths=jnp.zeros((self.num_episodes,), dtype=jnp.int32),
             completed=jnp.zeros((self.num_episodes,), dtype=bool),
+            num_violations=jnp.zeros((), dtype=jnp.int32),
         )
         final = eqx_utils.filter_while_loop(
             rollout_cond,
@@ -172,4 +178,10 @@ class Evaluator(eqx.Module):
             (agent, env_state, obsv, state, trajs, index, key),
         )
         _, _, _, state, trajs, _, _ = final
-        return state.returns, state.disc_returns, state.lengths, trajs
+        return (
+            state.returns,
+            state.disc_returns,
+            state.lengths,
+            state.num_violations,
+            trajs,
+        )

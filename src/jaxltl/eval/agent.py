@@ -28,5 +28,5 @@ class Agent[TEvalState: WrapperState](eqx.Module):
     def update(
         self, obsv: EnvObservation, state: TEvalState, props: jax.Array, env: EnvWrapper
     ) -> "Agent":
-        """Update the agent's state based on the observation and environment properties."""
+        """Update the agent's state based on the observation and environment propositions."""
         return self  # No state to update

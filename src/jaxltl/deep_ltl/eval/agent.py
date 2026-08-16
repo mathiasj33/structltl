@@ -6,9 +6,6 @@ import jax
 import jax.numpy as jnp
 
 from jaxltl import eqx_utils
-from jaxltl.deep_ltl.reach_avoid.jax_graph_reach_avoid_sequence import (
-    JaxGraphReachAvoidSequence,
-)
 from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 from jaxltl.deep_ltl.wrappers.curriculum_wrapper import SequenceObservation
 from jaxltl.deep_ltl.wrappers.ldba_wrapper import LDBAWrapperState
@@ -75,7 +72,7 @@ class DeepLTLAgent(Agent[LDBAWrapperState]):
         true if the current step in the reach-avoid sequence is an epsilon transition,
         and the current environment assignment does not violate the next avoid set.
         """
-        is_epsilon = seq.reach[0, 0] == len(env._env.assignments)
+        is_epsilon = seq.reach[0, 0] == len(env._env.assignments())
         is_valid = jnp.logical_or(
             seq.depth <= 1, jnp.all(seq.avoid[1] != assignment_index)
         )
@@ -97,26 +94,7 @@ class DeepLTLAgent(Agent[LDBAWrapperState]):
             ldba_state, batched_seqs, obs = inputs
             # ldba_state: int
             # obs: EnvObservation
-            if type(batched_seqs) is JaxGraphReachAvoidSequence:
-                state_seqs = JaxGraphReachAvoidSequence(
-                    reach=batched_seqs.reach[ldba_state],
-                    avoid=batched_seqs.avoid[ldba_state],
-                    reach_graphs=jax.tree.map(
-                        lambda x: x[ldba_state], batched_seqs.reach_graphs
-                    ),
-                    avoid_graphs=jax.tree.map(
-                        lambda x: x[ldba_state], batched_seqs.avoid_graphs
-                    ),
-                    repeat_last=batched_seqs.repeat_last[ldba_state],
-                    last_index=batched_seqs.last_index[ldba_state],
-                )
-            else:
-                state_seqs = JaxReachAvoidSequence(
-                    reach=batched_seqs.reach[ldba_state],
-                    avoid=batched_seqs.avoid[ldba_state],
-                    repeat_last=batched_seqs.repeat_last[ldba_state],
-                    last_index=batched_seqs.last_index[ldba_state],
-                )
+            state_seqs = jax.tree.map(lambda x: x[ldba_state], batched_seqs)
             num_seqs = state_seqs.reach.shape[0]
             batched_obs = jax.tree.map(
                 lambda x: jnp.broadcast_to(x[None, ...], (num_seqs,) + x.shape), obs

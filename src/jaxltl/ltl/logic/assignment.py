@@ -49,3 +49,6 @@ class Assignment:
 
     def __or__(self, other: "Assignment") -> "Assignment":
         return Assignment(self.true_propositions | other.true_propositions)
+
+    def __contains__(self, item: str) -> bool:
+        return item in self.true_propositions

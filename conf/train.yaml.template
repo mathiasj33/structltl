@@ -9,3 +9,7 @@ use_gpu: true # use gpu if available
 rl_alg:
   total_timesteps: 20e6
 save_freq: 2e5
+
+wandb:
+  project: project-name
+  use_wandb: false

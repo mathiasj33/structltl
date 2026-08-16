@@ -15,9 +15,6 @@ import numpy as np
 
 from jaxltl.environments import environment, spaces
 from jaxltl.ltl.logic.assignment import Assignment
-from jaxltl.ltl.logic.boolean_parser import (
-    Node,
-)
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -215,17 +212,15 @@ class LetterWorld(
         pos_letters = state.letters[state.position[0], state.position[1], :]  # (L,)
         return jnp.nonzero(pos_letters, size=len(self.propositions), fill_value=-1)[0]
 
-    @property
+    @staticmethod
     @override
-    def assignments(self) -> list[Assignment]:
+    def assignments() -> list[Assignment]:
         """Returns all possible assignments in the environment."""
-        assignments = [Assignment(frozenset({letter})) for letter in self.propositions]
+        assignments = [
+            Assignment(frozenset({letter})) for letter in LetterWorld.propositions
+        ]
         assignments.append(Assignment(frozenset()))  # empty assignment
         return assignments
-
-    @override
-    def assignments_to_graph(self, assignments: frozenset[Assignment]) -> Node | None:
-        raise NotImplementedError()
 
     @override
     def get_renderer(

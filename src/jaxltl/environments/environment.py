@@ -13,14 +13,6 @@ import jax.numpy as jnp
 
 from jaxltl.environments.spaces import Space
 from jaxltl.ltl.logic.assignment import Assignment
-from jaxltl.ltl.logic.boolean_parser import (
-    EmptyNode,
-    MultiAndNode,
-    MultiOrNode,
-    Node,
-    NotNode,
-    VarNode,
-)
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -235,42 +227,6 @@ class Environment[
         matches = jnp.all(self.assignments_array == assignment, axis=1)
         return jnp.argmax(matches)  # () int32
 
-    def _assignments_to_dnf(self, assignments: frozenset[Assignment]) -> Node | None:
-        """Converts a set of assignments to a boolean formula (graph) in DNF."""
-        if not assignments:
-            return None
-
-        assignment_conjuncts = []
-        for assignment in assignments:
-            literals = []
-            for prop in self.propositions:
-                if prop in assignment:
-                    literals.append(VarNode(prop))
-                else:
-                    literals.append(NotNode(VarNode(prop)))
-
-            if not literals:
-                assignment_conjuncts.append(EmptyNode())
-                continue
-            if len(literals) == 1:
-                assignment_conjuncts.append(literals[0])
-            else:
-                assignment_conjuncts.append(MultiAndNode(literals))
-
-        if not assignment_conjuncts:
-            return None
-        if len(assignment_conjuncts) == 1:
-            return assignment_conjuncts[0]
-        return MultiOrNode(assignment_conjuncts)
-
-    def assignments_to_graph(self, assignments: frozenset[Assignment]) -> Node | None:
-        """Converts a set of assignments to a boolean formula graph.
-
-        This base implementation creates a canonical DNF representation.
-        Environments can override this for a more simplified representation.
-        """
-        return self._assignments_to_dnf(assignments)
-
     def _compute_assignments_array(self) -> jax.Array:
         """Returns the possible assignments in the environment in array form.
 
@@ -278,9 +234,9 @@ class Environment[
             jax.Array of shape (num_assignments, num_propositions) int32
         """
         assignments = -jnp.ones(
-            (len(self.assignments), len(self.propositions)), dtype=jnp.int32
+            (len(self.assignments()), len(self.propositions)), dtype=jnp.int32
         )
-        for i, assignment in enumerate(self.assignments):
+        for i, assignment in enumerate(self.assignments()):
             prop_indices = sorted(
                 [self.propositions.index(p) for p in assignment], reverse=True
             )
@@ -290,9 +246,9 @@ class Environment[
             assignments = assignments.at[i, :].set(prop_indices)
         return assignments
 
-    @property
+    @staticmethod
     @abstractmethod
-    def assignments(self) -> list[Assignment]:
+    def assignments() -> list[Assignment]:
         """Returns the possible assignments as a list of Assignment objects."""
         pass
 

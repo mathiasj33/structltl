@@ -1,0 +1,6 @@
+- "!(region_a | door) U (vase & region_b)"
+- "!door U (region_a & (!vase U region_b))"
+- "!(vase | crate) U (region_a & F (door & F region_b))"
+- "(crate => (crate U region_b)) U (crate & region_b & (region_b U (!crate & region_b)))"
+- "(vase => (vase U door)) U (F (crate & region_b & (region_b U (!crate & region_b))) & F (vase & door & (door U (!vase & door))))"
+- "(crate => (!(region_a | region_b)) U door) U (vase & door & (door U (!vase & door)))"

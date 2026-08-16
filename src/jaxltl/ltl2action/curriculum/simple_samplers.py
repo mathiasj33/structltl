@@ -1,6 +1,10 @@
 import random
+from collections.abc import Sequence
+from typing import override
 
-import jaxltl
+from jaxltl.ltl.logic.assignment import Assignment
+from jaxltl.ltl.logic.boolean_parser import BooleanNode, FalseNode
+from jaxltl.ltl.logic.utils import compute_sat
 from jaxltl.ltl2action.curriculum.curriculum import Sampler
 
 
@@ -71,13 +75,75 @@ class SimpleReachAvoidFormulaSampler(Sampler[str]):
         )
 
 
-if __name__ == "__main__":
-    env = jaxltl.make("LetterWorld")[0]
-    sampler = SimpleReachAvoidFormulaSampler(
-        depth=1,
-        reach=1,
-        avoid=1,
-        propositions=list(env.propositions),
-    )
-    for _ in range(10):
-        print(sampler.sample())
+class BooleanReachAvoidFormulaSampler(Sampler[str]):
+    """Samples reach-avoid formulae of complex boolean formulae. Ensures feasibility."""
+
+    depth: tuple[int, int]
+    reach_formulas: Sequence[BooleanNode]
+    avoid_formulas: Sequence[BooleanNode]
+    avoid_prob: float
+
+    def __init__(
+        self,
+        depth: int | tuple[int, int],
+        reach_formulas: Sequence[BooleanNode],
+        avoid_formulas: Sequence[BooleanNode],
+        assignments: Sequence[Assignment],
+        avoid_prob: float = 0.5,
+    ):
+        if isinstance(depth, int):
+            depth = (depth, depth)
+        self.depth = depth
+        self.reach_formulas = reach_formulas
+        self.avoid_formulas = avoid_formulas
+        self.avoid_prob = avoid_prob
+        if not reach_formulas:
+            raise ValueError("At least one reach formula must be provided.")
+        self.assignments = tuple(assignments)
+
+    @override
+    def sample(self) -> str:
+        depth = random.randint(self.depth[0], self.depth[1])
+
+        last_reach_sat = None
+        reach_avoid = []
+
+        for _ in range(depth):
+            # 1. Sample Reach Formula
+            available_reach = [
+                f
+                for f in self.reach_formulas
+                if not last_reach_sat
+                or not compute_sat(f, self.assignments).issubset(last_reach_sat)
+            ]
+            available_reach = (
+                available_reach if available_reach else self.reach_formulas
+            )
+            reach = random.choice(available_reach)
+            reach_sat = compute_sat(reach, self.assignments)
+
+            # 2. Sample Avoid Formula
+            available_avoid = [
+                f
+                for f in self.avoid_formulas
+                if not reach_sat.issubset(compute_sat(f, self.assignments))
+                and (
+                    not last_reach_sat
+                    or not last_reach_sat.issubset(compute_sat(f, self.assignments))
+                )
+            ]
+            if not available_avoid or random.random() > self.avoid_prob:
+                avoid = FalseNode()
+            else:
+                avoid = random.choice(available_avoid)
+
+            last_reach_sat = reach_sat
+            reach_avoid.append((reach, avoid))
+
+        formula = "true"
+        for reach, avoid in reversed(reach_avoid):
+            if isinstance(avoid, FalseNode):
+                formula = f"F(({str(reach)}) & {formula})"
+            else:
+                formula = f"(!({str(avoid)}) U ({str(reach)} & {formula}))"
+        return formula

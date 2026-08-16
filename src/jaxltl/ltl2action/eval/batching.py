@@ -16,4 +16,4 @@ class FormulaClosureBatcher(SampleBatcher[str, JaxFormulaClosureGraph]):
         samples: list[str],
         env: Environment | EnvWrapper,
     ) -> JaxFormulaClosureGraph:
-        return preprocess_formulas(samples, env)
+        return preprocess_formulas(samples, env, verbose=True)

@@ -35,14 +35,18 @@ class LDBAWrapper[
 ](EnvWrapper[TEnvParams, TObsFeatures, ResetOptions]):
     """A wrapper that tracks task progression through an LDBA."""
 
+    overwrite_finite: bool
+
     def __init__(
         self,
         env: (
             EnvWrapper[TEnvParams, TObsFeatures, ResetOptions]
             | Environment[Any, TEnvParams, TObsFeatures, ResetOptions]
         ),
+        overwrite_finite: bool = False,
     ):
         super().__init__(env)
+        self.overwrite_finite = overwrite_finite
 
     @eqx.filter_jit
     def reset(
@@ -56,6 +60,8 @@ class LDBAWrapper[
         re_state, obs = super().reset(key, state, params, options)
         propositions = self._env.compute_propositions(re_state, params)
         ldba, seqs = options.task
+        if self.overwrite_finite:
+            ldba = ldba._replace(finite=jnp.ones_like(ldba.finite, dtype=jnp.bool))
         state = LDBAWrapperState(
             state=re_state,
             ldba=ldba,
@@ -63,7 +69,7 @@ class LDBAWrapper[
             ldba_state=ldba.initial_state,
             obs=obs,
             propositions=propositions,
-            info={},
+            info={"is_sink": jnp.zeros((), dtype=jnp.bool_)},
         )
         return state, obs
 
@@ -87,6 +93,9 @@ class LDBAWrapper[
     ) -> EnvTransition[LDBAWrapperState, TObsFeatures]:
         env_action, epsilon_action = action
         env_transition = super().step(key, state, env_action, params)
+        env_transition.info["is_sink"] = jnp.zeros(
+            (), dtype=jnp.bool_
+        )  # placeholder, will be updated below
         eps_transition = self._epsilon_step(state)
         transition: EnvTransition = eqx_utils.pytree_where(
             epsilon_action.astype(jnp.bool), eps_transition, env_transition
@@ -107,13 +116,14 @@ class LDBAWrapper[
         terminated = jnp.logical_or(
             is_sink, jnp.logical_and(state.ldba.finite, is_accepting)
         )
+        info = transition.info | {"is_sink": is_sink}
         new_state = LDBAWrapperState(
             state=transition.state,
             ldba=state.ldba,
             state_to_seqs=state.state_to_seqs,
             ldba_state=next_ldba_state,
             obs=transition.observation,
-            info=transition.info,
+            info=info,
             propositions=transition.propositions,
         )
         return EnvTransition(
@@ -124,7 +134,7 @@ class LDBAWrapper[
             truncated=transition.truncated,
             terminal_observation=transition.terminal_observation,
             propositions=transition.propositions,
-            info=transition.info,
+            info=info,
         )
 
     def _epsilon_step(

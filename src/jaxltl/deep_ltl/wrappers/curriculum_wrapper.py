@@ -262,7 +262,7 @@ class CurriculumWrapper[
         true if the current step in the reach-avoid sequence is an epsilon transition,
         and the current environment assignment does not violate the next avoid set.
         """
-        is_epsilon = seq.reach[0, 0] == len(self._env.assignments)
+        is_epsilon = seq.reach[0, 0] == len(self._env.assignments())
         is_valid = jnp.logical_or(
             seq.depth <= 1, jnp.all(seq.avoid[1] != assignment_index)
         )

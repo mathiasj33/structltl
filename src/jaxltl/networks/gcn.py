@@ -24,6 +24,7 @@ class GCN(CallableModule):
     """A simple Graph Convolutional Network."""
 
     layers: list[eqx.nn.Linear]
+    residual: bool
     activation: Callable[[jax.Array], jax.Array]
     final_layer_activation: bool
 
@@ -33,9 +34,10 @@ class GCN(CallableModule):
         out_size: int,
         hidden_sizes: list[int],
         activation: Callable[[jax.Array], jax.Array] = jax.nn.relu,
-        weight_init: Initializer | None = jax.nn.initializers.orthogonal(),
+        weight_init: Initializer | None = jax.nn.initializers.glorot_uniform(),
         bias_init: Initializer | None = jax.nn.initializers.zeros,
         *,
+        residual: bool,
         final_layer_activation: bool = True,
         key: jax.Array,
     ):
@@ -54,6 +56,7 @@ class GCN(CallableModule):
         ]
         self.activation = activation
         self.final_layer_activation = final_layer_activation
+        self.residual = residual
 
     def _gcn_conv(
         self, layer: eqx.nn.Linear, graph: jraph.GraphsTuple
@@ -135,11 +138,15 @@ class GCN(CallableModule):
         """Processes the graph through all GCN layers."""
 
         for i, layer in enumerate(self.layers):
+            residual = cast(NodeFeatures, graph.nodes)["features"]
             graph = self._gcn_conv(layer, graph)
 
             if i < len(self.layers) - 1 or self.final_layer_activation:
                 nodes = cast(NodeFeatures, graph.nodes)
-                features = self.activation(nodes["features"])
+                features = nodes["features"]
+                if self.residual:
+                    features = features + residual
+                features = self.activation(features)
 
                 # Re-mask output to keep padding clean
                 features = jnp.where(nodes["mask"][:, None], features, 0.0)

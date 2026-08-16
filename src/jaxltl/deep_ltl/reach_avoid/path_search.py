@@ -16,11 +16,11 @@ from jaxltl.ltl.logic.assignment import Assignment
 
 
 def compute_sequences(  # noqa: PLR0915
-    ldba: LDBA, num_loops: int = 1
+    ldba: LDBA, num_loops: int = 1, finite: bool = False
 ) -> dict[int, list[ReachAvoidSequence]]:
     """Computes the set of reach-avoid sequences for each LDBA state."""
 
-    num_loops = 0 if ldba.is_finite_specification() else num_loops
+    num_loops = 0 if finite or ldba.is_finite_specification() else num_loops
 
     ### Helper functions ###
     def check_path_contained(path1: Path, path2: Path) -> bool:

@@ -4,9 +4,6 @@ from jaxltl.deep_ltl.curriculum.zone_env_graph_samplers import (
     GraphZoneReachAvoidSampler,
     GraphZoneReachStaySampler,
 )
-from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
-    GraphReachAvoidSequence,
-)
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON, EpsilonType
 from jaxltl.environments.zone_env.zone_env import ZoneEnv
 from jaxltl.ltl.logic.assignment import Assignment
@@ -17,6 +14,9 @@ from jaxltl.ltl.logic.boolean_parser import (
     NotNode,
     OrNode,
     VarNode,
+)
+from jaxltl.struct_ltl.reach_avoid.boolean_reach_avoid_sequence import (
+    BooleanReachAvoidSequence,
 )
 
 propositions = ZoneEnv.propositions
@@ -61,7 +61,9 @@ def test_graph_reach_avoid_sampler():
     for j in range(50):
         key, subkey = jax.random.split(key)
         seq = sampler.sample_graph(subkey)
-        reconstructed_seq = GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
+        reconstructed_seq = BooleanReachAvoidSequence.from_reach_avoid_sequence(
+            seq, env
+        )
 
         if j < 5:
             print(f"\n--- Reach-Avoid Sample {j + 1} ---")
@@ -148,7 +150,9 @@ def test_graph_reach_stay_sampler():
     for j in range(50):
         key, subkey = jax.random.split(key)
         seq = sampler.sample_graph(subkey)
-        reconstructed_seq = GraphReachAvoidSequence.from_reach_avoid_sequence(seq, env)
+        reconstructed_seq = BooleanReachAvoidSequence.from_reach_avoid_sequence(
+            seq, env
+        )
 
         if j < 5:
             print(f"\n--- Reach-Stay Sample {j + 1} ---")

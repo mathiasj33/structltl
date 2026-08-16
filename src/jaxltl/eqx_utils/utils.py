@@ -68,3 +68,13 @@ def compute_size(module: eqx.Module) -> int:
     """
     params, _ = eqx.partition(module, eqx.is_array)
     return jax.tree.reduce(lambda x, y: x + y.nbytes, params, initializer=0)
+
+
+def compute_num_params(module: eqx.Module) -> int:
+    """Compute the total number of parameters in an Equinox Module.
+
+    Args:
+        module: The Equinox Module to compute the number of parameters of.
+    """
+    params, _ = eqx.partition(module, eqx.is_array)
+    return jax.tree.reduce(lambda x, y: x + y.size, params, initializer=0)

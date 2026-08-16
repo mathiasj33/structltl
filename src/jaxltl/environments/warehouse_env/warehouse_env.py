@@ -20,10 +20,6 @@ import jax.numpy as jnp
 
 from jaxltl.environments import environment, spaces
 from jaxltl.ltl.logic.assignment import Assignment
-from jaxltl.ltl.logic.boolean_parser import (
-    EmptyNode,
-    Node,
-)
 
 if TYPE_CHECKING:
     from jaxltl.environments.renderer.renderer import BaseRenderer
@@ -45,6 +41,7 @@ class WarehouseParams(environment.EnvParams):
     num_vases: int
     num_crates: int
     pickup_radius: float
+    pickup_cooldown_steps: int  # Steps to wait after dropping before pickup allowed
 
     # Region settings
     region_a: tuple[float, float, float, float]  # (x_min, x_max, y_min, y_max)
@@ -81,6 +78,10 @@ class EnvState(eqx.Module):
     carrying_vase_idx: jax.Array  # shape: ()
     carrying_crate_idx: jax.Array  # shape: ()
 
+    # Cooldown State
+    vase_pickup_cooldown: jax.Array  # shape: () - steps until vase pickup allowed
+    crate_pickup_cooldown: jax.Array  # shape: () - steps until crate pickup allowed
+
 
 class ObsFeatures(NamedTuple):
     acceleration: jax.Array
@@ -105,6 +106,7 @@ class WarehouseEnv(
         num_vases=4,
         num_crates=4,
         pickup_radius=0.2,
+        pickup_cooldown_steps=10,
         region_a=(0, 2.2, 1.5, 3.7),
         region_b=(3.7, 6.6, 0, 1.5),
         door_region=(5, 6.6, 5.8, 6.6),
@@ -118,8 +120,8 @@ class WarehouseEnv(
     )
 
     propositions = ("region_a", "region_b", "door", "vase", "crate")
-    max_nodes = 1
-    max_edges = 1
+    max_nodes = 29
+    max_edges = 26
 
     def __init__(self, **kwargs):
         params = dataclasses.asdict(self.default_params) | kwargs
@@ -182,6 +184,8 @@ class WarehouseEnv(
             crate_available=jnp.ones(params.num_crates, dtype=jnp.bool),
             carrying_vase_idx=jnp.array(-1, dtype=jnp.int32),
             carrying_crate_idx=jnp.array(-1, dtype=jnp.int32),
+            vase_pickup_cooldown=jnp.array(0, dtype=jnp.int32),
+            crate_pickup_cooldown=jnp.array(0, dtype=jnp.int32),
         )
 
     def _sample_objects(self, key: jax.Array, params: WarehouseParams) -> jax.Array:
@@ -249,6 +253,11 @@ class WarehouseEnv(
         params: WarehouseParams,
     ) -> tuple[EnvState, jax.Array, jax.Array, dict[Any, Any]]:
         cont_action, disc_action = action
+
+        # --- Cooldown Updates ---
+        vase_pickup_cooldown = jnp.maximum(state.vase_pickup_cooldown - 1, 0)
+        crate_pickup_cooldown = jnp.maximum(state.crate_pickup_cooldown - 1, 0)
+
         # --- Dynamics ---
         force = jnp.clip(
             cont_action[0] * params.max_force, -params.max_force, params.max_force
@@ -271,7 +280,6 @@ class WarehouseEnv(
         )
 
         position = state.position + velocity * params.dt
-        position = jnp.clip(position, 0.0, params.world_size)
         angle = self._wrap_angle(state.angle + angular_velocity * params.dt)
 
         # -- Pickup Logic --
@@ -282,6 +290,7 @@ class WarehouseEnv(
                 state.vase_positions,
                 state.vase_available,
                 state.carrying_vase_idx,
+                vase_pickup_cooldown,
                 params,
             ),
             lambda: (state.carrying_vase_idx, state.vase_available),
@@ -293,32 +302,56 @@ class WarehouseEnv(
                 state.crate_positions,
                 state.crate_available,
                 state.carrying_crate_idx,
+                crate_pickup_cooldown,
                 params,
             ),
             lambda: (state.carrying_crate_idx, state.crate_available),
         )
 
         # -- Drop Logic --
-        carrying_vase_idx, vase_positions, vase_available = jax.lax.cond(
-            disc_action == _DROP_VASE_INDEX,
-            lambda: self._handle_drop_object(
-                position,
-                state.vase_positions,
-                state.vase_available,
-                carrying_vase_idx,
-            ),
-            lambda: (carrying_vase_idx, state.vase_positions, vase_available),
+        carrying_vase_idx, vase_positions, vase_available, vase_pickup_cooldown = (
+            jax.lax.cond(
+                disc_action == _DROP_VASE_INDEX,
+                lambda: self._handle_drop_object(
+                    position,
+                    state.vase_positions,
+                    state.vase_available,
+                    carrying_vase_idx,
+                    vase_pickup_cooldown,
+                    params.pickup_cooldown_steps,
+                ),
+                lambda: (
+                    carrying_vase_idx,
+                    state.vase_positions,
+                    vase_available,
+                    vase_pickup_cooldown,
+                ),
+            )
         )
-        carrying_crate_idx, crate_positions, crate_available = jax.lax.cond(
-            disc_action == _DROP_CRATE_INDEX,
-            lambda: self._handle_drop_object(
-                position,
-                state.crate_positions,
-                state.crate_available,
-                carrying_crate_idx,
-            ),
-            lambda: (carrying_crate_idx, state.crate_positions, crate_available),
+        carrying_crate_idx, crate_positions, crate_available, crate_pickup_cooldown = (
+            jax.lax.cond(
+                disc_action == _DROP_CRATE_INDEX,
+                lambda: self._handle_drop_object(
+                    position,
+                    state.crate_positions,
+                    state.crate_available,
+                    carrying_crate_idx,
+                    crate_pickup_cooldown,
+                    params.pickup_cooldown_steps,
+                ),
+                lambda: (
+                    carrying_crate_idx,
+                    state.crate_positions,
+                    crate_available,
+                    crate_pickup_cooldown,
+                ),
+            )
         )
+
+        terminated = jnp.logical_or(
+            jnp.any(position < 0.0), jnp.any(position > params.world_size)
+        )
+
         next_state = EnvState(
             position=position,
             velocity=velocity,
@@ -331,9 +364,11 @@ class WarehouseEnv(
             crate_available=crate_available,
             carrying_vase_idx=carrying_vase_idx,
             carrying_crate_idx=carrying_crate_idx,
+            vase_pickup_cooldown=vase_pickup_cooldown,
+            crate_pickup_cooldown=crate_pickup_cooldown,
         )
 
-        return next_state, jnp.array(0.0), jnp.array(False), {}
+        return next_state, jnp.array(0.0), jnp.array(terminated), {}
 
     @staticmethod
     def _wrap_angle(angle: jax.Array) -> jax.Array:
@@ -345,6 +380,7 @@ class WarehouseEnv(
         object_positions: jax.Array,
         object_available: jax.Array,
         carrying_object_idx: jax.Array,
+        pickup_cooldown: jax.Array,
         params: WarehouseParams,
     ) -> tuple[jax.Array, jax.Array]:
         """Logic for handling pickup of an object (vase or crate).
@@ -358,12 +394,16 @@ class WarehouseEnv(
         closest_object_dist = object_dists[closest_object_idx]
 
         is_carrying_object = carrying_object_idx != -1
+        is_on_cooldown = pickup_cooldown > 0
         pickup_success = jnp.logical_and(
             jnp.logical_and(
-                closest_object_dist < params.pickup_radius,
-                object_available[closest_object_idx],
+                jnp.logical_and(
+                    closest_object_dist < params.pickup_radius,
+                    object_available[closest_object_idx],
+                ),
+                jnp.logical_not(is_carrying_object),
             ),
-            jnp.logical_not(is_carrying_object),
+            jnp.logical_not(is_on_cooldown),
         )
 
         new_carrying_object_idx = jnp.where(
@@ -382,13 +422,16 @@ class WarehouseEnv(
         object_positions: jax.Array,
         object_available: jax.Array,
         carrying_object_idx: jax.Array,
-    ) -> tuple[jax.Array, jax.Array, jax.Array]:
+        current_cooldown: jax.Array,
+        cooldown_steps: int,
+    ) -> tuple[jax.Array, jax.Array, jax.Array, jax.Array]:
         """Logic for handling drop of an object (vase or crate).
 
         Returns:
             new_carrying_object_idx: jax.Array
             new_object_positions: jax.Array
             new_object_available: jax.Array
+            new_pickup_cooldown: jax.Array
         """
         drop_success = carrying_object_idx != -1
         new_object_positions = jax.lax.cond(
@@ -402,25 +445,27 @@ class WarehouseEnv(
             lambda: object_available,
         )
         new_carrying_object_idx = jnp.where(drop_success, -1, carrying_object_idx)
-        return new_carrying_object_idx, new_object_positions, new_object_available
+        new_pickup_cooldown = jnp.where(drop_success, cooldown_steps, current_cooldown)
+        return (
+            new_carrying_object_idx,
+            new_object_positions,
+            new_object_available,
+            new_pickup_cooldown,
+        )
 
     @override
     def _compute_obs(self, state: EnvState, params: WarehouseParams) -> ObsFeatures:
-        lidar_vases = self._compute_lidar_for_objects(
+        compute_lidars = jax.vmap(
+            self._compute_lidar_for_objects,
+            in_axes=(None, None, 0, 0, 0),
+        )
+        lidar = compute_lidars(
             state,
             params,
-            state.vase_positions,
-            state.carrying_vase_idx,
-            state.vase_available,
+            jnp.stack([state.vase_positions, state.crate_positions]),
+            jnp.array([state.carrying_vase_idx, state.carrying_crate_idx]),
+            jnp.stack([state.vase_available, state.crate_available]),
         )
-        lidar_crates = self._compute_lidar_for_objects(
-            state,
-            params,
-            state.crate_positions,
-            state.carrying_crate_idx,
-            state.crate_available,
-        )
-        lidar = jnp.stack([lidar_vases, lidar_crates])
 
         carrying_status = jnp.array(
             [state.carrying_vase_idx != -1, state.carrying_crate_idx != -1],
@@ -428,15 +473,32 @@ class WarehouseEnv(
         )
         region_vecs = self._compute_region_vectors(state, params)
 
+        c, s = jnp.cos(state.angle), jnp.sin(state.angle)
+        rot = jnp.array([[c, s], [-s, c]])
+
+        # Rotate and normalize acceleration and velocity
+        acceleration = jnp.dot(rot, state.acceleration) / params.max_force
+        velocity = jnp.dot(rot, state.velocity) / self._get_true_max_speed(params)
+        angular_velocity = state.angular_velocity / params.max_angular_velocity
+        # Rotate region vectors
+        region_vecs = jnp.dot(region_vecs, rot.T) / params.world_size
+
         return ObsFeatures(
-            acceleration=state.acceleration,
-            velocity=state.velocity,
-            angular_velocity=state.angular_velocity.reshape(1),
+            acceleration=acceleration,
+            velocity=velocity,
+            angular_velocity=angular_velocity.reshape(1),
             global_position=state.position,
             lidar=lidar,
             region_vectors=region_vecs,
             carrying_status=carrying_status,
         )
+
+    def _get_true_max_speed(self, params: WarehouseParams) -> jax.Array:
+        """Calculate the true maximum speed considering drag."""
+        steady_state_speed = (params.max_force * params.dt * (1.0 - params.drag)) / (
+            params.drag + _EPS
+        )
+        return jnp.minimum(steady_state_speed, params.max_speed)
 
     def _compute_lidar_for_objects(
         self,
@@ -501,9 +563,20 @@ class WarehouseEnv(
         Returns ids of active propositions.
         Order: region_a, region_b, door, vase, crate
         """
-        in_a = self._pos_in_region(state.position, params.region_a)
-        in_b = self._pos_in_region(state.position, params.region_b)
-        at_door = self._pos_in_region(state.position, params.door_region)
+        pos_in_regions = jax.vmap(self._pos_in_region, in_axes=(None, 0, None))
+        in_regions = pos_in_regions(
+            state.position,
+            jnp.stack(
+                [
+                    jnp.array(params.region_a),
+                    jnp.array(params.region_b),
+                    jnp.array(params.door_region),
+                ],
+                dtype=jnp.float32,
+            ),
+            jnp.array(0.0),
+        )
+        in_a, in_b, at_door = in_regions[0], in_regions[1], in_regions[2]
 
         has_vase = state.carrying_vase_idx != -1
         has_crate = state.carrying_crate_idx != -1
@@ -516,8 +589,8 @@ class WarehouseEnv(
     def _pos_in_region(
         self,
         position: jax.Array,
-        region: tuple[float, float, float, float],
-        radius: jax.Array = jnp.array(0.0),
+        region: jax.Array,
+        radius: jax.Array,
     ) -> jax.Array:
         x, y = position[0], position[1]
         x_min, x_max, y_min, y_max = region
@@ -526,9 +599,9 @@ class WarehouseEnv(
             jnp.logical_and(y + radius >= y_min, y - radius <= y_max),
         )
 
-    @property
+    @staticmethod
     @override
-    def assignments(self) -> list[Assignment]:
+    def assignments() -> list[Assignment]:
         regions = [
             frozenset({"region_a"}),
             frozenset({"region_b"}),
@@ -551,16 +624,6 @@ class WarehouseEnv(
         return assignments
 
     @override
-    def assignments_to_graph(self, assignments: frozenset[Assignment]) -> Node | None:
-        if not assignments:
-            return None
-        if assignments == {Assignment(frozenset())}:
-            return EmptyNode()
-
-        # TODO: implement heuristic
-        return self._assignments_to_dnf(assignments)
-
-    @override
     def get_renderer(
         self, env_params: WarehouseParams, **kwargs
     ) -> "BaseRenderer[ObsFeatures, ResetOptions]":
@@ -576,4 +639,51 @@ class WarehouseEnv(
         params: WarehouseParams,
         **plotting_kwargs,
     ) -> None:
-        pass
+        """Plots trajectories of environment states.
+
+        Args:
+            trajs: Batched EnvStates of shape (num_episodes, max_length, ...)
+            lengths: Trajectory lengths (num_episodes,) int32
+            params: Environment parameters
+            plotting_kwargs: Additional keyword arguments for the plotting function
+        """
+        from jaxltl.environments.warehouse_env.plotter import draw_trajectories
+
+        num_episodes = lengths.shape[0]
+
+        # Extract positions for each trajectory up to its length
+        positions = [
+            trajs.position[i, : lengths[i] + 1].tolist() for i in range(num_episodes)
+        ]
+
+        # Extract initial object positions (from first timestep)
+        initial_vase_positions = [
+            trajs.vase_positions[i, 0].tolist() for i in range(num_episodes)
+        ]
+        initial_crate_positions = [
+            trajs.crate_positions[i, 0].tolist() for i in range(num_episodes)
+        ]
+
+        # Extract carrying status for each trajectory
+        carrying_vase_idx = [
+            trajs.carrying_vase_idx[i, : lengths[i] + 1].tolist()
+            for i in range(num_episodes)
+        ]
+        carrying_crate_idx = [
+            trajs.carrying_crate_idx[i, : lengths[i] + 1].tolist()
+            for i in range(num_episodes)
+        ]
+
+        draw_trajectories(
+            positions=positions,
+            initial_vase_positions=initial_vase_positions,
+            initial_crate_positions=initial_crate_positions,
+            carrying_vase_idx=carrying_vase_idx,
+            carrying_crate_idx=carrying_crate_idx,
+            region_a=params.region_a,
+            region_b=params.region_b,
+            door_region=params.door_region,
+            world_size=params.world_size,
+            pickup_radius=params.pickup_radius,
+            **plotting_kwargs,
+        )

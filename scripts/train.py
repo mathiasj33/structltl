@@ -14,10 +14,11 @@ import hydra
 import jax
 import jax.numpy as jnp
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 import jaxltl
 from jaxltl import DATA_DIR, eqx_utils
+from jaxltl.environments.environment import EnvParams
 from jaxltl.environments.spaces import Space
 from jaxltl.environments.wrappers import AutoResetWrapper, LogWrapper, VectorizeWrapper
 from jaxltl.environments.wrappers.auto_reset_wrapper import ResetStrategy
@@ -25,6 +26,7 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
     PrecomputedResetWrapper,
 )
 from jaxltl.environments.wrappers.time_limit_wrapper import TimeLimitWrapper
+from jaxltl.eqx_utils.utils import compute_num_params
 from jaxltl.hydra_utils.utils import resolve_default_options
 from jaxltl.rl.actor_critic import ActorCritic
 from jaxltl.rl.algorithm import RLAlgorithm
@@ -59,15 +61,19 @@ def main(cfg: DictConfig):
     keys, model_keys = split[:, 0], split[:, 1]
 
     make_models = eqx.filter_vmap(
-        build_model, in_axes=(None, None, None, None, None, 0)
+        build_model, in_axes=(None, None, None, None, None, None, 0)
     )
     models = make_models(
         cfg.model,
         env.observation_space(env_params).shape,
         env.action_space(env_params),
-        len(env.assignments),
+        len(env.assignments()),
         len(env.propositions),
+        env_params,
         model_keys,
+    )
+    logger.info(
+        f"Training model with {compute_num_params(models) / cfg.num_seeds / 1e3}k parameters."
     )
 
     rl_alg: RLAlgorithm = hydra.utils.instantiate(cfg.rl_alg)
@@ -75,16 +81,35 @@ def main(cfg: DictConfig):
         rl_alg.train, in_axes=(eqx.if_array(0), None, None, 0, None, None, 0)
     )
     train = eqx.filter_jit(train)
+
+    if cfg.wandb.use_wandb:
+        import wandb
+
+        settings = wandb.Settings(silent=True)
+
+        wandb_runs = [
+            wandb.init(
+                reinit="create_new",
+                project=cfg.wandb.project,
+                config=OmegaConf.to_container(cfg, resolve=True) | {"seed": i},  # type: ignore
+                name=f"{cfg.run}_{i}",
+                settings=settings,
+            )
+            for i in range(cfg.num_seeds)
+        ]
+    else:
+        wandb_runs = None
+
     logger.info("Compiling training function...")
     start_time = time.time()
-    cb = make_callback(cfg)
+    cb = make_callback(cfg, wandb_runs)
     compiled = train.lower(
         models, env, env_params, keys, cb, cfg.save_freq, seeds
     ).compile()
     logger.info(f"Compilation completed in {time.time() - start_time:.2f} seconds")
 
     logger.info("Starting training")
-    cb = make_callback(cfg)
+    cb = make_callback(cfg, wandb_runs)
     models = jax.block_until_ready(
         compiled(models, env, env_params, keys, cb, cfg.save_freq, seeds)
     )
@@ -94,8 +119,12 @@ def main(cfg: DictConfig):
     eqx_utils.save("models.eqx", models, metadata={"num_models": cfg.num_seeds})
     logger.info("Models saved to models.eqx")
 
+    if wandb_runs is not None:
+        for run in wandb_runs:
+            run.finish()
 
-def make_callback(cfg: DictConfig):
+
+def make_callback(cfg: DictConfig, wandb_runs: list | None = None):
     """Create a callback function to log progress and save model checkpoints."""
 
     start_time = time.time()
@@ -142,6 +171,18 @@ def make_callback(cfg: DictConfig):
         filename = folder / f"model_seed{seed}_step{step}.eqx"
         eqx_utils.save(filename, model_params)
 
+        # log to wandb
+        if wandb_runs is not None:
+            wandb = wandb_runs[int(seed)]
+            wandb.log(
+                {
+                    "avg_return": float(avg_returns),
+                    "avg_curriculum_stage": float(avg_stage),
+                    "steps_per_second": int(sps),
+                },
+                step=int(step),
+            )
+
         # log to csv
         return_values = metric["episode_return"][metric["done"]].tolist()
         pos_return_values = metric["positive_return"][metric["done"]].tolist()
@@ -173,6 +214,7 @@ def build_model(
     act_space: Space,
     num_assignments: int,
     num_propositions: int,
+    env_params: EnvParams,
     key: jax.Array,
 ) -> ActorCritic:
     model_fn = hydra.utils.instantiate(
@@ -180,6 +222,7 @@ def build_model(
         obs_shape=obs_shape,
         num_assignments=num_assignments,
         num_propositions=num_propositions,
+        env_params=env_params,
         key=key,
         _partial_=True,
     )

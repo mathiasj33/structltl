@@ -1,3 +1,5 @@
 from joblib import Memory
 
-memory = Memory(".cache", verbose=0)
+from jaxltl import CACHE_DIR
+
+memory = Memory(CACHE_DIR, verbose=0)

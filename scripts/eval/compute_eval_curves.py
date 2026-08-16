@@ -10,6 +10,7 @@ import time
 import equinox as eqx
 import hydra
 import jax
+import jax.numpy as jnp
 from jax.experimental import io_callback
 from jaxtyping import PyTree
 from omegaconf import DictConfig
@@ -42,9 +43,12 @@ def main(cfg: DictConfig):
 
     # load and preprocess formulas
     logger.info("Processing formulas...")
-    formulas_file = DATA_DIR / cfg.env.name / "eval_formulas.txt"
-    with open(formulas_file) as f:
-        formula_strings = [line.strip() for line in f.readlines() if line.strip()]
+    if hasattr(cfg, "formulas"):
+        formula_strings = cfg.formulas
+    else:
+        formulas_file = DATA_DIR / cfg.env.name / "eval_formulas.txt"
+        with open(formulas_file) as f:
+            formula_strings = [line.strip() for line in f.readlines() if line.strip()]
     formulas: PyTree = hydra.utils.call(
         cfg.alg.preprocess_formulas, formula_strings, env
     )
@@ -72,7 +76,7 @@ def main(cfg: DictConfig):
     def eval_timestep(key, agent_params):
         agent = eqx.combine(agent_params, static)
         key, eval_key = jax.random.split(key)
-        returns, disc_returns, lengths, _ = eval_fn(
+        returns, disc_returns, lengths, _, _ = eval_fn(
             agent,
             env,
             env_params,
@@ -102,7 +106,9 @@ def save_results(
 ):
     """Saves averaged results to a CSV file."""
 
-    csv_path = f"runs/{cfg.env.name}/{cfg.run}/eval_results_checkpoints.csv"
+    csv_path = (
+        f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/eval_results_checkpoints.csv"
+    )
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
     num_seeds = int(returns.shape[1])
@@ -121,10 +127,21 @@ def save_results(
     for i, step in enumerate(checkpoint_steps):
         # Compute per-seed stats for this timestep
         # shapes: (num_checkpoints, num_seeds, num_formulas, num_episodes)
-        mean_returns, mean_disc_returns, mean_lengths = jax.tree.map(
+
+        mask = returns[i] > 0  # (num_seeds, num_formulas, num_episodes)
+        counts = jnp.sum(mask, axis=(1, 2))  # Shape: (num_seeds,)
+
+        def compute_masked_seed_means(data_tensor):
+            # Sum values of successful trajectories only
+            sum_val = jnp.sum(data_tensor[i] * mask, axis=(1, 2))
+            # Avoid division by zero if a seed had 0 successes
+            return jnp.where(counts > 0, sum_val / counts, jnp.nan)
+
+        mean_returns, mean_disc_returns = jax.tree.map(
             lambda x, i=i: x[i].mean(axis=-1).mean(axis=-1),
-            (returns, disc_returns, lengths),
+            (returns, disc_returns),
         )
+        mean_lengths = compute_masked_seed_means(lengths)
 
         # CSV rows (per-seed)
         for seed in seeds:

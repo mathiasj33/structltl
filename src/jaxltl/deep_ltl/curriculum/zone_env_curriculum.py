@@ -23,28 +23,28 @@ def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curric
                     depth=1,
                     reach=1,
                     avoid=0,
-                    assignments=env.assignments,
+                    assignments=env.assignments(),
                 ),
                 threshold=0.9,
             ),
             # 2. Reach tasks of depth 2
             RandomCurriculumStage(
                 sampler=SimpleReachAvoidSampler(
-                    depth=2, reach=1, avoid=0, assignments=env.assignments
+                    depth=2, reach=1, avoid=0, assignments=env.assignments()
                 ),
                 threshold=0.95,
             ),
             # 3. Simple reach-avoid tasks
             RandomCurriculumStage(
                 sampler=SimpleReachAvoidSampler(
-                    depth=1, reach=1, avoid=1, assignments=env.assignments
+                    depth=1, reach=1, avoid=1, assignments=env.assignments()
                 ),
                 threshold=0.95,
             ),
             # 4. Reach-avoid tasks of depth 2
             RandomCurriculumStage(
                 sampler=SimpleReachAvoidSampler(
-                    depth=2, reach=1, avoid=1, assignments=env.assignments
+                    depth=2, reach=1, avoid=1, assignments=env.assignments()
                 ),
                 threshold=0.9,
             ),
@@ -56,13 +56,13 @@ def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curric
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            assignments=env.assignments,
+                            assignments=env.assignments(),
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
                         sampler=SimpleReachStaySampler(
-                            num_stay=30, avoid=(0, 1), assignments=env.assignments
+                            num_stay=30, avoid=(0, 1), assignments=env.assignments()
                         ),
                         threshold=None,
                     ),
@@ -78,13 +78,13 @@ def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curric
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            assignments=env.assignments,
+                            assignments=env.assignments(),
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
                         sampler=SimpleReachStaySampler(
-                            num_stay=60, avoid=(0, 1), assignments=env.assignments
+                            num_stay=60, avoid=(0, 1), assignments=env.assignments()
                         ),
                         threshold=None,
                     ),
@@ -100,13 +100,13 @@ def make(env: Environment | EnvWrapper, load_path: Path | None = None) -> Curric
                             depth=(1, 2),
                             reach=(1, 2),
                             avoid=(0, 2),
-                            assignments=env.assignments,
+                            assignments=env.assignments(),
                         ),
                         threshold=None,
                     ),
                     RandomCurriculumStage(
                         sampler=SimpleReachStaySampler(
-                            num_stay=60, avoid=(0, 2), assignments=env.assignments
+                            num_stay=60, avoid=(0, 2), assignments=env.assignments()
                         ),
                         threshold=None,
                     ),

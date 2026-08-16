@@ -7,15 +7,15 @@ import numpy as np
 
 from jaxltl.deep_ltl.curriculum.graph_sequence_sampler import GraphSequenceSampler
 from jaxltl.deep_ltl.curriculum.sampling_utils import sample_propositions
-from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
-    GraphReachAvoidSequence,
-)
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON
 from jaxltl.ltl.logic.assignment import Assignment
-from jaxltl.ltl.logic.boolean_parser import MultiOrNode, Node, NotNode, VarNode
+from jaxltl.ltl.logic.boolean_parser import BooleanNode, MultiOrNode, NotNode, VarNode
+from jaxltl.struct_ltl.reach_avoid.boolean_reach_avoid_sequence import (
+    BooleanReachAvoidSequence,
+)
 
 
-def _create_or_graph(nodes: list[VarNode]) -> Node | None:
+def _create_or_graph(nodes: list[VarNode]) -> BooleanNode | None:
     """Creates a graph from a list of VarNodes."""
     if not nodes:
         return None
@@ -26,7 +26,7 @@ def _create_or_graph(nodes: list[VarNode]) -> Node | None:
 
 @functools.lru_cache(maxsize=1024)
 def _compute_satisfying_assignments(
-    graph: Node | None, all_assignments: tuple[Assignment, ...]
+    graph: BooleanNode | None, all_assignments: tuple[Assignment, ...]
 ) -> frozenset[Assignment]:
     """Computes the set of assignments that satisfy a given boolean formula."""
     if graph is None:
@@ -64,7 +64,7 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
         self.reach = reach
         self.avoid = avoid
 
-    def sample_graph(self, key: jax.Array) -> GraphReachAvoidSequence:
+    def sample_graph(self, key: jax.Array) -> BooleanReachAvoidSequence:
         key, depth_key = jax.random.split(key)
         depth = jax.random.randint(depth_key, (), self.depth[0], self.depth[1] + 1)
 
@@ -118,7 +118,7 @@ class GraphZoneReachAvoidSampler(GraphSequenceSampler):
             reach_avoid_assignments.extend([padding_assignments] * num_padding)
             reach_avoid_graphs.extend([padding_graphs] * num_padding)
 
-        return GraphReachAvoidSequence(reach_avoid_assignments, reach_avoid_graphs)
+        return BooleanReachAvoidSequence(reach_avoid_assignments, reach_avoid_graphs)
 
 
 class GraphZoneReachStaySampler(GraphSequenceSampler):
@@ -144,7 +144,7 @@ class GraphZoneReachStaySampler(GraphSequenceSampler):
         self.avoid = avoid
         self.num_stay = num_stay
 
-    def sample_graph(self, key: jax.Array) -> GraphReachAvoidSequence:
+    def sample_graph(self, key: jax.Array) -> BooleanReachAvoidSequence:
         reach_key, avoid_key = jax.random.split(key)
 
         # 1. Sample proposition to reach
@@ -195,6 +195,6 @@ class GraphZoneReachStaySampler(GraphSequenceSampler):
             reach_avoid_assignments.extend([padding_assignments] * num_padding)
             reach_avoid_graphs.extend([padding_graphs] * num_padding)
 
-        return GraphReachAvoidSequence(
+        return BooleanReachAvoidSequence(
             reach_avoid_assignments, reach_avoid_graphs, repeat_last=self.num_stay
         )

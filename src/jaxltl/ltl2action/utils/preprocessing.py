@@ -2,6 +2,7 @@
 
 import jax
 import jax.numpy as jnp
+from tqdm import tqdm
 
 import jaxltl
 from jaxltl.environments.environment import Environment
@@ -11,7 +12,7 @@ from jaxltl.ltl2action.utils.jax_formula_closure import JaxFormulaClosureGraph
 
 
 def preprocess_formulas(
-    formulas: list[str], env: Environment | EnvWrapper
+    formulas: list[str], env: Environment | EnvWrapper, verbose: bool = False
 ) -> JaxFormulaClosureGraph:
     """Converts a list of LTL formulas into a batched JaxFormulaClosureGraph.
 
@@ -23,9 +24,10 @@ def preprocess_formulas(
     """
 
     closures: list[FormulaClosureGraph] = []
-    for formula in formulas:
+    it = tqdm(formulas, desc="Computing closures") if verbose else formulas
+    for formula in it:
         closure = FormulaClosureGraph(formula)
-        closure.build(env.assignments)
+        closure.build(env.assignments())
         closures.append(closure)
     return JaxFormulaClosureGraph.from_closure_graphs(closures, env)
 

@@ -4,8 +4,12 @@ import enum
 
 from graphviz import Source
 
+from jaxltl.deep_ltl.reach_avoid import path_search
+from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EpsilonType
+from jaxltl.environments.warehouse_env.warehouse_env import WarehouseEnv
 from jaxltl.ltl.automata import LDBA, ltl2ldba
 from jaxltl.ltl.logic import Assignment
+from jaxltl.ltl.logic.utils import synthesize_formula
 
 
 class Color(enum.Enum):
@@ -22,7 +26,8 @@ def draw_ldba(
     filename="ldba",
     fmt="pdf",
     view=True,
-    positive_label=False,
+    graph_label=False,
+    assignments: list[Assignment] | None = None,
     self_loops=True,
 ) -> None:
     """Draw an LDBA as a graph using Graphviz."""
@@ -43,7 +48,17 @@ def draw_ldba(
         for transition in transitions:
             if not self_loops and transition.target == state:
                 continue
-            dot += f'{state} -> {transition.target} [label="{transition.label if not positive_label else transition.positive_label}"'
+            label = transition.positive_label
+            if graph_label and not transition.is_epsilon():
+                assert assignments is not None, (
+                    "Assignments must be provided for graph labeling."
+                )
+                label = synthesize_formula(
+                    frozenset(transition.valid_assignments),
+                    tuple(assignments),
+                    tuple(ldba.propositions),
+                )
+            dot += f'{state} -> {transition.target} [label="{label}"'
             if transition.accepting:
                 dot += f' color="{Color.ACCEPTING}"'
             dot += ' fontname="helvetica"'
@@ -53,13 +68,18 @@ def draw_ldba(
     s.render(view=view, cleanup=True)
 
 
-def construct_ldba(formula: str, prune: bool = True) -> LDBA:
+def construct_ldba(
+    formula: str, prune: bool = True, assignments: list[Assignment] | None = None
+) -> LDBA:
     ldba = ltl2ldba(formula)
     print("Constructed LDBA.")
     assert ldba.check_valid()
     print("Checked valid.")
     if prune:
-        ldba.prune(Assignment.zero_or_one_propositions(set(ldba.propositions)))
+        assignments = assignments or Assignment.zero_or_one_propositions(
+            set(ldba.propositions)
+        )
+        ldba.prune(assignments)
         print("Pruned impossible transitions.")
     ldba.complete_sink_state()
     print("Added sink state.")
@@ -68,9 +88,42 @@ def construct_ldba(formula: str, prune: bool = True) -> LDBA:
 
 
 if __name__ == "__main__":
-    f = "(green U F(yellow & F(purple & F(red)))) U ((red & F(purple)) & (!yellow U green))"
+    f = "FG region_a"
+    assignments = WarehouseEnv.assignments()
+    # for i, a in enumerate(assignments):
+    #     print(f"Assignment {i}: {a}")
+    props = WarehouseEnv.propositions
+    print_paths = False
 
-    ldba = construct_ldba(f, prune=True)
+    ldba = construct_ldba(f, prune=True, assignments=assignments)
+
+    for transitions in ldba.state_to_transitions.values():
+        num_eps = sum(t.is_epsilon() for t in transitions)
+        if num_eps > 1:
+            print(f"State has {num_eps} epsilon transitions.")
+
     print(f"Finite: {ldba.is_finite_specification()}")
     print(f"Num states: {ldba.num_states}")
-    draw_ldba(ldba, fmt="png", positive_label=True, self_loops=True)
+    draw_ldba(
+        ldba, fmt="png", graph_label=True, assignments=assignments, self_loops=True
+    )
+
+    if print_paths:
+        paths = path_search.compute_sequences(ldba)
+        for state in range(ldba.num_states):
+            print(f"State {state}:")
+            for path in paths[state]:  # type: ignore
+                path_str = []
+                for reach, avoid in path:
+                    if isinstance(reach, EpsilonType):
+                        reach_graph = "ε"
+                    else:
+                        reach_graph = synthesize_formula(
+                            reach, tuple(assignments), props
+                        )
+                    avoid_graph = synthesize_formula(avoid, tuple(assignments), props)
+                    path_str.append(f"[{reach_graph}, {avoid_graph}]")
+                print(" -> ".join(path_str))
+                for reach, avoid in path:
+                    print((reach, avoid))
+        print()

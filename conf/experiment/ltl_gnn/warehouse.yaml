@@ -6,7 +6,7 @@ defaults:
   - /rl_alg: ppo
 
 curriculum:
-  _target_: jaxltl.deep_ltl.curriculum.warehouse_curriculum.make
+  _target_: jaxltl.deep_ltl.curriculum.warehouse_curriculum_clause.make
 
 curriculum_wrapper:
   episode_window: 512
@@ -33,8 +33,9 @@ model:
     embedding_dim: 16
     gcn:
       _target_: jaxltl.networks.gcn.GCN
-      hidden_sizes: [32, 32]
+      hidden_sizes: [16, 16]
       activation: ${act:relu}
+      residual: false
 
 rl_alg:
   total_timesteps: 5e6

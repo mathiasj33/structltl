@@ -69,7 +69,7 @@ class JaxLDBA(NamedTuple):
         num_states = jax.numpy.array(ldba.num_states, dtype=jax.numpy.int32)
         initial_state = jax.numpy.array(ldba.initial_state, dtype=jax.numpy.int32)
 
-        num_assignments = len(env.assignments)
+        num_assignments = len(env.assignments())
         # Use numpy arrays and convert at the end for efficiency
         transitions = -np.ones((ldba.num_states, num_assignments + 1), dtype=np.int32)
         accepting = np.zeros((ldba.num_states, num_assignments), dtype=bool)
@@ -90,7 +90,7 @@ class JaxLDBA(NamedTuple):
                     transitions[state, index] = transition.target
                 else:
                     for assignment in transition.valid_assignments:
-                        index = env.assignments.index(assignment)
+                        index = env.assignments().index(assignment)
                         transitions[state, index] = transition.target
                         if transition.accepting:
                             accepting[state, index] = True

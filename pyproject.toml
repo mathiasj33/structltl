@@ -12,6 +12,7 @@ dependencies = [
     "jax>=0.7.2,<0.8",
     "graphviz>=0.21,<0.22",
     "jraph<=0.0.6dev0",
+    "wandb>=0.23.1,<0.24",
     "pyarrow>=22.0.0,<23",
 ]
 
@@ -30,6 +31,8 @@ platforms = ["linux-64"]
 jaxltl = { path = ".", editable = true }
 
 [tool.pixi.tasks]
+copy-templates = "python -c \"import shutil; from pathlib import Path; [shutil.copy(f, f.with_suffix('')) for f in Path('conf').glob('*.template')]\""
+threejs = "bash -c '(sleep 1 && xdg-open http://localhost:8000) & python -m http.server 8000 --directory threejs_output'"
 
 [tool.pixi.dependencies]
 ruff = ">=0.11.13,<0.12"
@@ -43,7 +46,9 @@ seaborn = ">=0.13.2,<0.14"
 pytest = ">=8.4.2,<9"
 joblib = ">=1.5.2,<2"
 tqdm = ">=4.67.1,<5"
+sympy = ">=1.14.0,<2"
 spot = ">=2.14.4,<3"
+tabulate = ">=0.10.0,<0.11"
 
 [tool.pixi.feature.gpu.system-requirements]
 cuda = "12"

@@ -13,6 +13,7 @@ import time
 import hydra
 import jax
 import jax.numpy as jnp
+from hydra.core.hydra_config import HydraConfig
 from jaxtyping import PyTree
 from omegaconf import DictConfig
 
@@ -22,6 +23,7 @@ from jaxltl.environments.wrappers.precomputed_reset_wrapper import (
 )
 from jaxltl.environments.wrappers.time_limit_wrapper import TimeLimitWrapper
 from jaxltl.environments.wrappers.vectorize_wrapper import VectorizeWrapper
+from jaxltl.eqx_utils.utils import compute_num_params
 from jaxltl.eval.utils import (
     load_batched_models,
     make_eval_fn,
@@ -33,7 +35,8 @@ logger = logging.getLogger(__name__)
 @hydra.main(version_base="1.1", config_path="../../conf", config_name="eval")
 def main(cfg: DictConfig):
     # build environment
-    env, env_params = jaxltl.make(cfg.env.name)
+    env_params = cfg.get("env_params", {})
+    env, env_params = jaxltl.make(cfg.env.name, **env_params)
     if cfg.env.use_precomputed_resets:
         resets_path = (
             f"{jaxltl.DATA_DIR}/{cfg.env.name}/{cfg.env.precomputed_resets_path}"
@@ -43,6 +46,8 @@ def main(cfg: DictConfig):
     env = hydra.utils.call(cfg.alg.wrap_env, env, cfg, training=False)
     env = VectorizeWrapper(env)
 
+    # preprocess formulas
+    logger.info("Preprocessing formulas...")
     formulas: PyTree = hydra.utils.call(cfg.alg.preprocess_formulas, cfg.formulas, env)
 
     # load models
@@ -50,6 +55,10 @@ def main(cfg: DictConfig):
     key, model_key = jax.random.split(key)
     models, num_models = load_batched_models(cfg, env, env_params, key=model_key)
     agents = hydra.utils.instantiate(cfg.alg.agent, models)
+
+    logger.info(
+        f"Loaded model with {compute_num_params(models) / num_models / 1e3}k parameters."
+    )
 
     # set up evaluator
     eval_fn = make_eval_fn(
@@ -60,7 +69,7 @@ def main(cfg: DictConfig):
     key, eval_key = jax.random.split(key)
     logger.info("Starting evaluation...")
     start = time.time()
-    returns, disc_returns, lengths, _ = eval_fn(
+    returns, disc_returns, lengths, violations, _ = eval_fn(
         agents,
         env,
         env_params,
@@ -71,12 +80,22 @@ def main(cfg: DictConfig):
     logger.info(f"Evaluation completed in {time.time() - start:.2f} seconds.")
 
     # log to stdout and save to CSV
-    log_and_save_results(cfg, returns, lengths)
+    formula_group = HydraConfig.get().runtime.choices.get("formulas", "default")
+    formula_suffix = formula_group.split("/")[-1]
+    log_and_save_results(cfg, returns, lengths, violations, formula_suffix)
 
 
-def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array):
+def log_and_save_results(
+    cfg: DictConfig,
+    returns: jax.Array,
+    lengths: jax.Array,
+    violations: jax.Array,
+    formula_suffix: str,
+):
     """Logs aggregated results per formula and saves per-seed results to a CSV file."""
-    csv_path = f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/eval_results.csv"
+    csv_path = (
+        f"runs/{cfg.env.name}/{cfg.alg.name}/{cfg.run}/results_{formula_suffix}.csv"
+    )
     os.makedirs(os.path.dirname(csv_path), exist_ok=True)
 
     num_seeds = int(returns.shape[0])
@@ -87,14 +106,17 @@ def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array
         "deterministic",
         "formula",
         "return",
+        "violations",
         "length",
     ]
 
+    violations /= cfg.eval.num_episodes
     rows = []
     for i, formula in enumerate(cfg.formulas):
         # Compute per-seed stats
         returns_i = returns[:, i]  # (num_seeds, num_episodes)
         lengths_i = lengths[:, i]  # (num_seeds, num_episodes)
+        violations_i = violations[:, i]  # (num_seeds,)
 
         means = jnp.mean(returns_i, axis=1)  # (num_seeds,)
 
@@ -110,6 +132,9 @@ def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array
         logger.info(f"Formula: {formula}")
         logger.info(f"SR/AV: {float(jnp.mean(means)):.3f}+-{float(jnp.std(means)):.3f}")
         logger.info(
+            f"Violations: {float(jnp.mean(violations_i)):.3f}+-{float(jnp.std(violations_i)):.3f}"
+        )
+        logger.info(
             f"Length: {float(jnp.mean(avg_lengths)):.3f}+-{float(jnp.std(avg_lengths)):.3f}"
         )
 
@@ -121,6 +146,7 @@ def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array
                     "deterministic": bool(cfg.eval.deterministic),
                     "formula": formula,
                     "return": float(means[seed]),
+                    "violations": float(violations_i[seed]),
                     "length": float(avg_lengths[seed]),
                 }
             )
@@ -130,6 +156,20 @@ def log_and_save_results(cfg: DictConfig, returns: jax.Array, lengths: jax.Array
         writer.writeheader()
         writer.writerows(rows)
     logger.info(f"Wrote results to {csv_path}")
+
+    per_seed_means = jnp.mean(returns, axis=(1, 2))  # (num_seeds,)
+    logger.info("========================================")
+    logger.info(
+        f"Overall SR/AV: {float(jnp.mean(per_seed_means)):.3f}+-{float(jnp.std(per_seed_means)):.3f}"
+    )
+    per_seed_violations = jnp.mean(violations, axis=1)  # (num_seeds,)
+    logger.info(
+        f"Overall Violations: {float(jnp.mean(per_seed_violations)):.3f}+-{float(jnp.std(per_seed_violations)):.3f}"
+    )
+    per_seed_lengths = jnp.mean(lengths, axis=(1, 2))  # (num_seeds,)
+    logger.info(
+        f"Overall Length: {float(jnp.mean(per_seed_lengths)):.3f}+-{float(jnp.std(per_seed_lengths)):.3f}"
+    )
 
 
 if __name__ == "__main__":

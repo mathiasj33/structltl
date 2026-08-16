@@ -9,22 +9,27 @@ from jaxltl.utils.plot_utils import smooth
 sns.set_theme(style="darkgrid")
 
 
-def load_df(path: str | Path) -> pd.DataFrame:
+def load_df(path: str | Path, smooth_radius: int = 10) -> pd.DataFrame:
     df = pd.read_csv(path).sort_values(by=["seed", "timestep"])
     df["smooth_sr"] = df.groupby("seed")["metric"].transform(
-        lambda x: smooth(x, radius=5)
+        lambda x: smooth(x, radius=smooth_radius)
     )
     df["smooth_length"] = df.groupby("seed")["length"].transform(
-        lambda x: smooth(x, radius=5)
+        lambda x: smooth(x, radius=smooth_radius)
     )
     df["name"] = path
     return df
 
 
 runs = [
-    "deepltl",
-    "ltl-gnn",
-    # "tmp",
+    # "struct_ltl/noattn",
+    # "struct_ltl/newattn",
+    # "struct_ltl/attn_mod",
+    # "deep_ltl/big",
+    "deep_ltl/main",
+    "struct_ltl/attn",
+    "struct_ltl/noattn",
+    "struct_ltl/attn_pos",
 ]
 
 dfs = [load_df(f"runs/ZoneEnv/{run}/eval_results_checkpoints.csv") for run in runs]

@@ -21,7 +21,6 @@ class MockEnv(Environment):
             default_params=None, propositions=("red", "green", "purple", "yellow")
         )
 
-    @property
     @override
     def assignments(self):
         return [

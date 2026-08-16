@@ -78,7 +78,13 @@ def simplify(formula: LTLNode) -> LTLNode:
     """
     formula_str = str(formula)
     spot_formula = spot.formula(formula_str)
-    simplified = spot.simplify(spot_formula)
+    simplified = spot.simplify(spot_formula).unabbreviate("RWMG")
+    spot_str = str(simplified)
+    if len(spot_str) > len(formula_str) + 10:
+        # If Spot's simplification is much longer, return the original formula
+        return formula
+    if "M" in spot_str or "R" in spot_str or "W" in spot_str or "G" in spot_str:
+        raise ValueError("Simplification did not fully unabbreviate the formula.")
     return parse(str(simplified))
 
 

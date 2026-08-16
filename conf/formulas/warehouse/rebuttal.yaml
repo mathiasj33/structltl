@@ -1,0 +1,6 @@
+- "F (crate & vase & region_a)"
+- "F (crate & vase & region_b)"
+- "F (crate & vase & door)"
+- "F (crate & vase & region_a & (region_a U (!vase & !crate & region_a)))"
+- "F (crate & vase & region_b & (region_b U (!vase & !crate & region_b)))"
+- "F (crate & vase & door & (door U (!vase & !crate & door)))"

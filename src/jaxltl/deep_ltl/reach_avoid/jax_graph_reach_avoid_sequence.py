@@ -8,21 +8,22 @@ import jax.numpy as jnp
 import jraph
 import numpy as np
 
-from jaxltl.deep_ltl.reach_avoid.graph_reach_avoid_sequence import (
-    GraphReachAvoidSequence,
-)
 from jaxltl.deep_ltl.reach_avoid.jax_reach_avoid_sequence import JaxReachAvoidSequence
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EpsilonType
 from jaxltl.ltl.logic.assignment import Assignment
 from jaxltl.ltl.logic.boolean_parser import (
     AndNode,
+    BooleanNode,
     EmptyNode,
+    FalseNode,
     MultiAndNode,
     MultiOrNode,
-    Node,
     NotNode,
     OrNode,
     VarNode,
+)
+from jaxltl.struct_ltl.reach_avoid.boolean_reach_avoid_sequence import (
+    BooleanReachAvoidSequence,
 )
 
 # Define integer constants for node types
@@ -30,7 +31,8 @@ NODE_TYPE_AND = 0
 NODE_TYPE_OR = 1
 NODE_TYPE_NOT = 2
 NODE_TYPE_EMPTY = 3
-NODE_TYPE_EPSILON = 4
+NODE_TYPE_FALSE = 4
+NODE_TYPE_EPSILON = 5
 
 
 class NodeData(TypedDict):
@@ -168,7 +170,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
     @classmethod
     def from_seq(
         cls,
-        seq: GraphReachAvoidSequence,
+        seq: BooleanReachAvoidSequence,
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
         max_nodes: int,
@@ -225,7 +227,7 @@ class JaxGraphReachAvoidSequence(JaxReachAvoidSequence):
     @classmethod
     def from_state_to_seqs(
         cls,
-        state_to_seqs: dict[int, list[GraphReachAvoidSequence]],
+        state_to_seqs: dict[int, list[BooleanReachAvoidSequence]],
         propositions: Sequence[str],
         assignments: Sequence[Assignment],
         max_nodes: int,
@@ -399,7 +401,9 @@ def _build_graph_tuple_from_parts(
     num_edges = adj_senders.shape[0]
 
     if num_nodes > max_nodes or num_edges > max_edges:
-        raise ValueError("Exceeded max_nodes or max_edges for the sequence.")
+        raise ValueError(
+            f"Exceeded max_nodes or max_edges for the sequence: max_nodes={max_nodes}, num_nodes={num_nodes}, max_edges={max_edges}, num_edges={num_edges}"
+        )
 
     # Pad nodes
     node_pad_len = max_nodes - num_nodes
@@ -469,7 +473,9 @@ def _fill_batched_graph_parts(
     num_edges = adj_senders.shape[0]
 
     if num_nodes > max_nodes or num_edges > max_edges:
-        raise ValueError("Exceeded max_nodes or max_edges for a sequence.")
+        raise ValueError(
+            f"Exceeded max_nodes or max_edges for a sequence: max_nodes={max_nodes}, num_nodes={num_nodes}, max_edges={max_edges}, num_edges={num_edges}"
+        )
 
     # Place into final batched arrays
     for key, arr in all_nodes.items():
@@ -484,7 +490,7 @@ def _fill_batched_graph_parts(
 
 
 def _convert_to_arrays(
-    graph_root: Node | EpsilonType | None,
+    graph_root: BooleanNode | EpsilonType | None,
     propositions: Sequence[str],
 ):
     """Converts a single boolean formula graph to padded numpy arrays."""
@@ -501,11 +507,11 @@ def _convert_to_arrays(
         n_edge = np.array(0)
         return nodes, edges, senders, receivers, n_node, n_edge
 
-    node_map: dict[Node | EpsilonType, int] = {}
+    node_map: dict[BooleanNode | EpsilonType, int] = {}
     node_features: list[list[int]] = []
     senders, receivers = [], []
 
-    def add_node(node: Node | EpsilonType) -> int:
+    def add_node(node: BooleanNode | EpsilonType) -> int:
         if node in node_map:
             return node_map[node]
         idx = len(node_map)
@@ -513,9 +519,9 @@ def _convert_to_arrays(
         node_features.append(_get_node_features_as_int(node, propositions))
         return idx
 
-    def build_graph(node: Node | EpsilonType):
+    def build_graph(node: BooleanNode | EpsilonType):
         parent_idx = add_node(node)
-        children: Sequence[Node] = []
+        children: Sequence[BooleanNode] = []
         if isinstance(node, MultiAndNode | MultiOrNode):
             children = node.operands
         elif isinstance(node, AndNode | OrNode):
@@ -564,7 +570,7 @@ def _convert_to_arrays(
 
 
 def _get_node_features_as_int(
-    node: Node | EpsilonType, propositions: Sequence[str]
+    node: BooleanNode | EpsilonType, propositions: Sequence[str]
 ) -> list[int]:
     """Creates an integer feature vector for a graph node.
     Returns:
@@ -589,6 +595,8 @@ def _get_node_features_as_int(
         type_id = NODE_TYPE_NOT
     elif isinstance(node, EmptyNode):
         type_id = NODE_TYPE_EMPTY
+    elif isinstance(node, FalseNode):
+        type_id = NODE_TYPE_FALSE
     elif isinstance(node, EpsilonType):
         type_id = NODE_TYPE_EPSILON
     else:

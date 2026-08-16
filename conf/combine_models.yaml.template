@@ -1,0 +1,6 @@
+defaults:
+  - experiment: ltl2action/warehouse
+  - hydra: simple
+  - _self_
+
+runs: [main, main_2] # runs to combine

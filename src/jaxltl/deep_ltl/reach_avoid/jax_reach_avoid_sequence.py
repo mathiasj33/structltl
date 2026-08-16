@@ -95,19 +95,21 @@ class JaxReachAvoidSequence(eqx.Module):
                 avoid: (num_seqs, max_length, num_assignments)
         """
         max_length = max(len(seq.reach_avoid) for seq in seqs)
-        reach = -np.ones((len(seqs), max_length, len(env.assignments)), dtype=np.int32)
+        reach = -np.ones(
+            (len(seqs), max_length, len(env.assignments())), dtype=np.int32
+        )
         avoid = -np.ones_like(reach)
         repeat_last = np.ones((len(seqs),), dtype=np.int32)
 
         assignment_to_idx = {
-            assignment: idx for idx, assignment in enumerate(env.assignments)
+            assignment: idx for idx, assignment in enumerate(env.assignments())
         }
         for seq_idx, seq in tqdm(
             enumerate(seqs), desc="Converting reach-avoid sequences", total=len(seqs)
         ):
             for i, (r, a) in enumerate(seq.reach_avoid):
                 if isinstance(r, EpsilonType):
-                    reach[seq_idx, i, 0] = len(env.assignments)
+                    reach[seq_idx, i, 0] = len(env.assignments())
                 else:
                     indices = [assignment_to_idx[assignment] for assignment in r]
                     reach[seq_idx, i, : len(indices)] = indices
@@ -122,7 +124,7 @@ class JaxReachAvoidSequence(eqx.Module):
         )
 
     @classmethod
-    def from_state_to_seqs(
+    def from_state_to_seqs(  # TODO: reduce duplication
         cls,
         state_to_seqs: dict[int, list[ReachAvoidSequence]],
         env: Environment | EnvWrapper,
@@ -143,7 +145,7 @@ class JaxReachAvoidSequence(eqx.Module):
         num_states = len(state_to_seqs)
         # Use numpy arrays and then convert to jax arrays for efficiency
         reach = -np.ones(
-            (num_states, max_seqs, max_length, len(env.assignments)),
+            (num_states, max_seqs, max_length, len(env.assignments())),
             dtype=np.int32,
         )
         avoid = -np.ones_like(reach)
@@ -151,14 +153,16 @@ class JaxReachAvoidSequence(eqx.Module):
             for seq_idx, seq in enumerate(seqs):
                 for i, (r, a) in enumerate(seq.reach_avoid):
                     if isinstance(r, EpsilonType):
-                        reach[state, seq_idx, i, 0] = len(env.assignments)
+                        reach[state, seq_idx, i, 0] = len(env.assignments())
                     else:
                         for j, assignment in enumerate(r):
-                            reach[state, seq_idx, i, j] = env.assignments.index(
+                            reach[state, seq_idx, i, j] = env.assignments().index(
                                 assignment
                             )
                     for j, assignment in enumerate(a):
-                        avoid[state, seq_idx, i, j] = env.assignments.index(assignment)
+                        avoid[state, seq_idx, i, j] = env.assignments().index(
+                            assignment
+                        )
         return cls(
             reach=jnp.array(reach),
             avoid=jnp.array(avoid),

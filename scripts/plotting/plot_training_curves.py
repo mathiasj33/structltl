@@ -13,6 +13,8 @@ def load_df(path: str | Path) -> pd.DataFrame:
     df = pd.read_csv(path, engine="pyarrow")
     bin_size = 4096 * 16
     df["bin"] = df["timestep"] // bin_size
+    if "positive_return" not in df.columns:
+        df["positive_return"] = df["return"]
 
     avg_data = (
         df.groupby(["seed", "bin"])[
@@ -33,24 +35,18 @@ def load_df(path: str | Path) -> pd.DataFrame:
     #         avg_data.loc[mask, "length"], radius=10
     #     )
 
-    avg_data["name"] = Path(path).parent.name
+    avg_data["name"] = Path(path).parent.parent.name
     return avg_data
 
 
 log_files = [
-    # "runs/ZoneEnv/fix/logs.csv",
-    # "runs/ZoneEnv/default/logs.csv",
-    # "runs/ZoneEnv/tmp/logs.csv",
-    # "runs/ZoneEnv/full/logs.csv",
-    # "runs/ZoneEnv/full2/logs.csv",
-    # "runs/RGBZoneEnv/tmp/logs.csv",
-    # "runs/ZoneEnv/deepltl/logs.csv",
-    # "runs/LetterWorld/deep_ltl/main/logs.csv",
-    # "runs/LetterWorld/deep_ltl/tmp/logs.csv",
-    # "runs/LetterWorld/deep_ltl/new/logs.csv",
-    "runs/LetterWorld/deep_ltl/newavoidcurr_ent/logs.csv",
-    "runs/LetterWorld/deep_ltl/truncterm/logs.csv",
-    "runs/LetterWorld/deep_ltl/newnewcurr_ent/logs.csv",
+    # "runs/WarehouseEnv/deep_ltl/new/logs.csv",
+    # "runs/WarehouseEnv/struct_ltl/noattn/logs.csv",
+    # "runs/WarehouseEnv/struct_ltl/newattn/logs.csv",
+    # "runs/ZoneEnv/deep_ltl/main/logs.csv",
+    # "runs/ZoneEnv/struct_ltl/main/logs.csv",
+    # "runs/ZoneEnv/ltl2action/main10/logs.csv",
+    "runs/ZoneEnv/genz_ltl/main/logs.csv",
 ]
 
 dfs = [load_df(path) for path in log_files]

@@ -143,7 +143,7 @@ class PrecomputedCurriculum(Curriculum):
                         avoid=seq.avoid,
                         repeat_last=seq.repeat_last,
                         last_index=seq.last_index,
-                    )
+                    )  # TODO: handle clauses
                 else:
                     raise ValueError(
                         f"Loaded sequence from {load_path} has unexpected type {type(seq)}"

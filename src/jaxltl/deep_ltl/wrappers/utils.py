@@ -20,5 +20,6 @@ def wrap_env(
         env = SequenceWrapper(env)
         env = CurriculumWrapper(env, curriculum, cfg.curriculum_wrapper.episode_window)
     else:
-        env = LDBAWrapper(env)
+        finite = cfg.get("eval", {}).get("finite", False)
+        env = LDBAWrapper(env, overwrite_finite=finite)
     return env

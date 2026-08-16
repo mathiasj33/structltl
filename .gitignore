@@ -7,6 +7,16 @@ data/
 dependencies/
 ldba.png
 .VSCodeCounter/
+threejs_output/
+
+# Local config files
+eval_curves.yaml
+eval.yaml
+precompute.yaml
+train.yaml
+visualize_env.yaml
+visualize_traj.yaml
+combine_models.yaml
 
 # Local config files
 eval_curves.yaml

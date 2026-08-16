@@ -41,7 +41,7 @@ def _preprocess_formula(
 
 def _build_ldba(formula: str, env: Environment | EnvWrapper):
     ldba = ltl2ldba(formula, env.propositions)
-    ldba.prune(env.assignments)
+    ldba.prune(env.assignments())
     ldba.complete_sink_state()
     ldba.compute_sccs()
     return ldba
