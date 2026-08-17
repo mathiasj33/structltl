@@ -1,11 +1,5 @@
 version: 7
 platforms:
-- name: linux-64
-  virtual-packages:
-  - __unix=0=0
-  - __linux=4.18
-  - __glibc=2.28
-  - __archspec=0=x86_64
 - name: p1
   subdir: linux-64
   virtual-packages:
@@ -21,7 +15,7 @@ environments:
     indexes:
     - https://pypi.org/simple
     packages:
-      linux-64:
+      p1:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-20_gnu.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/alsa-lib-1.2.16.1-hb03c661_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/aom-3.14.1-pl5321h039972f_1.conda
@@ -172,7 +166,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rav1e-0.8.1-h1fbca29_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-h853b02a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rpds-py-2026.6.3-py312h192e038_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.11.13-py312h1d08497_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.16.3-hc991c3d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/scipy-1.18.0-py312h54fa4ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl2-2.32.56-h54a6638_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl2_image-2.8.12-h0337fea_0.conda
@@ -543,7 +537,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rav1e-0.8.1-h1fbca29_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-h853b02a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rpds-py-2026.6.3-py312h192e038_0.conda
-      - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.11.13-py312h1d08497_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.16.3-hc991c3d_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/scipy-1.18.0-py312h54fa4ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl2-2.32.56-h54a6638_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sdl2_image-2.8.12-h0337fea_0.conda
@@ -3390,24 +3384,22 @@ packages:
   run_exports: {}
   size: 300259
   timestamp: 1782831325201
-- conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.11.13-py312h1d08497_0.conda
-  sha256: 25e99382bbe8431e25f086960ba34de8d975c903a4810fbf2009e95285e4d719
-  md5: 8e7c909d4f48865c8c5241d83649fc66
+- conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.16.3-hc991c3d_0.conda
+  noarch: python
+  sha256: 55443cd08836d9cfc724f91deae05b6149ab59e8337610861b8fbe14bae1aaf4
+  md5: 6dbd251a93fae4650975dbe481644161
   depends:
+  - python
+  - libgcc >=15
   - __glibc >=2.17,<3.0.a0
-  - libgcc >=13
-  - libstdcxx >=13
-  - python >=3.12,<3.13.0a0
-  - python_abi 3.12.* *_cp312
   constrains:
   - __glibc >=2.17
   license: MIT
-  license_family: MIT
   purls:
   - pkg:pypi/ruff?source=hash-mapping
   run_exports: {}
-  size: 8254968
-  timestamp: 1749215957598
+  size: 9549002
+  timestamp: 1786872517294
 - conda: https://conda.anaconda.org/conda-forge/linux-64/scipy-1.18.0-py312h54fa4ab_0.conda
   sha256: c304dfb0bbf0d824d3706623f6437237d7bfc83941bb7b18f80e05abb10ec79e
   md5: f8d242c552b0f7f682451ce95879af5e

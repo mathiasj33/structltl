@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from typing import override
 
 from jaxltl.deep_ltl.reach_avoid.reach_avoid_sequence import EPSILON
-from jaxltl.environments.zone_env.zone_env import ZoneEnv
+from jaxltl.environments.zone_env_nm.zone_env_nm import ZoneEnvNM
 from jaxltl.ltl.logic.assignment import Assignment
 from jaxltl.ltl.logic.boolean_parser import (
     BooleanNode,
@@ -154,8 +154,8 @@ if __name__ == "__main__":
     #     print(seq.reach_avoid_formulas)
     #     print(seq.clauses)
 
-    props = ZoneEnv.propositions
-    assignments = ZoneEnv.assignments()
+    props = ZoneEnvNM.propositions
+    assignments = ZoneEnvNM.assignments()
     cache = FormulaCache(props, assignments)
     sampler = BooleanReachStaySampler(
         num_stay=5,

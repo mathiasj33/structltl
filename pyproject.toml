@@ -25,7 +25,7 @@ allow-direct-references = true
 
 [tool.pixi.workspace]
 channels = ["conda-forge"]
-platforms = ["linux-64"]
+platforms = [{ platform = "linux-64", cuda = "12" }]
 
 [tool.pixi.pypi-dependencies]
 jaxltl = { path = ".", editable = true }
@@ -35,7 +35,7 @@ copy-templates = "python -c \"import shutil; from pathlib import Path; [shutil.c
 threejs = "bash -c '(sleep 1 && xdg-open http://localhost:8000) & python -m http.server 8000 --directory threejs_output'"
 
 [tool.pixi.dependencies]
-ruff = ">=0.11.13,<0.12"
+ruff = ">=0.16.3,<0.17"
 python-dotenv = ">=1.1.0,<2"
 jupyter = ">=1.1.1,<2"
 pygame = ">=2.6.1,<3"
@@ -49,9 +49,6 @@ tqdm = ">=4.67.1,<5"
 sympy = ">=1.14.0,<2"
 spot = ">=2.14.4,<3"
 tabulate = ">=0.10.0,<0.11"
-
-[tool.pixi.feature.gpu.system-requirements]
-cuda = "12"
 
 [tool.pixi.feature.gpu.pypi-dependencies]
 jax = { version = "*", extras = ["cuda12"] }

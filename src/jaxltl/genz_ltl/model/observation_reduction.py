@@ -9,7 +9,7 @@ from typing import NamedTuple, override
 import jax
 import jax.numpy as jnp
 
-from jaxltl.environments.zone_env import zone_env
+from jaxltl.environments.zone_env_nm import zone_env_nm
 from jaxltl.genz_ltl.reach_avoid.jax_reach_avoid_subgoal import JaxReachAvoidSubgoal
 
 
@@ -57,13 +57,13 @@ class GenericObservationReduction(ObservationReductionFunction[NamedTuple, Named
 
 
 class ZoneEnvObservationReduction(
-    ObservationReductionFunction[zone_env.ObsFeatures, zone_env.EnvParams]
+    ObservationReductionFunction[zone_env_nm.ObsFeatures, zone_env_nm.EnvParams]
 ):
     """Observation reduction for ZoneEnv."""
 
     @override
     def __call__(
-        self, features: zone_env.ObsFeatures, subgoal: JaxReachAvoidSubgoal
+        self, features: zone_env_nm.ObsFeatures, subgoal: JaxReachAvoidSubgoal
     ) -> jax.Array:
         """Reduce ZoneEnv observations to [agent_obs, reach_obs, avoid_obs].
 
@@ -82,6 +82,6 @@ class ZoneEnvObservationReduction(
         return jnp.concatenate([agent_obs, reach_obs, avoid_obs], axis=0)
 
     @override
-    def output_size(self, params: zone_env.EnvParams) -> int:
+    def output_size(self, params: zone_env_nm.EnvParams) -> int:
         """Output size of the reduced observation vector."""
         return 5 + 2 * params.num_lidar_bins

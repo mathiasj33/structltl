@@ -382,4 +382,4 @@ class PPO(RLAlgorithm):
             + self.config.vf_coef * value_loss
             - self.config.ent_coef * entropy
         )
-        return total_loss, (value_loss, loss_actor, entropy)
+        return total_loss, (value_loss, loss_actor, entropy)  # type: ignore

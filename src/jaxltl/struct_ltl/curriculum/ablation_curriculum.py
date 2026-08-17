@@ -2,7 +2,7 @@ from pathlib import Path
 
 from jaxltl.environments.environment import Environment
 from jaxltl.environments.wrappers.wrapper import EnvWrapper
-from jaxltl.environments.zone_env.zone_env import ZoneEnv
+from jaxltl.environments.zone_env_nm.zone_env_nm import ZoneEnvNM
 from jaxltl.ltl2action.curriculum.curriculum import (
     Curriculum,
     MultiRandomStage,
@@ -15,8 +15,8 @@ from jaxltl.struct_ltl.curriculum.boolean_samplers import (
 from jaxltl.struct_ltl.curriculum.formula_cache import FormulaCache
 from jaxltl.struct_ltl.utils.batching import BooleanSequenceBatcher
 
-propositions = ZoneEnv.propositions
-assignments = ZoneEnv.assignments()
+propositions = ZoneEnvNM.propositions
+assignments = ZoneEnvNM.assignments()
 cache = FormulaCache(propositions, assignments)
 
 

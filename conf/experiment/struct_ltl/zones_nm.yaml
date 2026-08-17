@@ -7,7 +7,7 @@ defaults:
   - /model/sequence: alibi_attention
 
 curriculum:
-  _target_: jaxltl.struct_ltl.curriculum.zone_env_curriculum.make
+  _target_: jaxltl.struct_ltl.curriculum.zone_env_nm_curriculum.make
 
 curriculum_wrapper:
   episode_window: 256

@@ -17,7 +17,7 @@ def load_df(path: str | Path, smooth_radius: int = 10) -> pd.DataFrame:
     df["smooth_length"] = df.groupby("seed")["length"].transform(
         lambda x: smooth(x, radius=smooth_radius)
     )
-    df["name"] = path
+    df["name"] = path  # type: ignore
     return df
 
 
