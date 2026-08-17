@@ -1,6 +1,0 @@
-- "GF yellow & GF green"
-- "GF red & GF green & GF yellow & G!purple"
-# - "FG red"
-# - "FG red & F (yellow & F green)"
-# - "FG purple & G !yellow"
-# - "G ((green | yellow) => F red) & FG (green | purple)"
