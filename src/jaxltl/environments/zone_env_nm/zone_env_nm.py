@@ -1,11 +1,4 @@
-"""An implementation of the zone environment introduced by LTL2Action (Vaezipoor et al., 2021).
-
-The environment simulates a point-mass agent moving in a 2D plane. The agent
-applies a forward force aligned with its current heading and can control its
-angular velocity. The world contains colored zones that the agent can enter.
-The agent is equipped with a lidar sensor that detects the distance to the
-nearest zone of each color in a set of evenly spaced angular bins.
-"""
+"""A non-myopic version of ZoneEnv, in which touching a purple zone makes green zones disappear."""
 
 import dataclasses
 from dataclasses import dataclass
@@ -17,7 +10,7 @@ import jax.numpy as jnp
 from jax import lax
 
 from jaxltl.environments import environment, spaces
-from jaxltl.environments.zone_env.plotter import draw_trajectories
+from jaxltl.environments.zone_env_nm.plotter import draw_trajectories
 from jaxltl.ltl.logic.assignment import Assignment
 
 if TYPE_CHECKING:
@@ -57,6 +50,7 @@ class EnvState(eqx.Module):
     # Zones (static for an episode)
     zone_centers: jax.Array  # shape: (N, 2)
     zone_colors: jax.Array  # shape: (N,) int in [0, C)
+    masked_colors: jax.Array  # shape: (C,) bool
 
 
 class ObsFeatures(NamedTuple):
@@ -70,7 +64,9 @@ class ResetOptions(NamedTuple):
     pass
 
 
-class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOptions]):
+class ZoneEnvNM(
+    environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOptions]
+):
     default_params = EnvParams(
         max_steps_in_episode=1000,
         world_size=6.6,
@@ -146,6 +142,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
             acceleration=acceleration,
             zone_centers=centers,
             zone_colors=colors,
+            masked_colors=jnp.zeros(len(self.propositions), dtype=jnp.bool),
         )
 
     @override
@@ -279,6 +276,18 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         half_size = params.world_size / 2.0
         terminated = jnp.any(jnp.abs(position) > half_size)
 
+        # Logic for touching purple makes green disappear
+        green_id = self.propositions.index("green")
+        purple_id = self.propositions.index("purple")
+        dists = jnp.linalg.norm(state.zone_centers - position, axis=1)  # (N,)
+        inside = dists < params.zone_radius  # (N,)
+        inside_purple = jnp.any(jnp.logical_and(state.zone_colors == purple_id, inside))
+        masked_colors = jnp.where(
+            inside_purple,
+            state.masked_colors.at[green_id].set(True),
+            state.masked_colors,
+        )
+
         next_state = EnvState(
             position=position,
             velocity=velocity,
@@ -287,6 +296,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
             acceleration=acceleration,
             zone_centers=state.zone_centers,
             zone_colors=state.zone_colors,
+            masked_colors=masked_colors,
         )
         return next_state, reward, terminated, {}
 
@@ -352,6 +362,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
 
         color_ids = jnp.arange(len(self.propositions), dtype=jnp.int32)
         lidar = jax.vmap(compute_color_lidar)(color_ids)  # (C, num_bins)
+        lidar = jnp.where(state.masked_colors[:, None], 0.0, lidar)
         return lidar
 
     @override
@@ -364,6 +375,7 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         pos = state.position  # (2,)
         centers = state.zone_centers  # (N,2)
         colors = state.zone_colors  # (N,)
+        masked_colors = state.masked_colors  # (C,)
 
         dists = jnp.linalg.norm(centers - pos, axis=1)  # (N,)
         inside = dists < params.zone_radius  # (N,)
@@ -371,7 +383,10 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
         def compute_color_prop(color_id: jax.Array) -> jax.Array:
             mask_color = colors == color_id  # (N,)
             inside_color = jnp.logical_and(mask_color, inside)  # (N,)
-            return jax.lax.cond(jnp.any(inside_color), lambda: color_id, lambda: -1)
+            is_masked = masked_colors[color_id]
+            return jax.lax.cond(
+                jnp.any(inside_color) & ~is_masked, lambda: color_id, lambda: -1
+            )
 
         color_ids = jnp.arange(len(self.propositions), dtype=jnp.int32)
         propositions = jax.vmap(compute_color_prop)(color_ids)  # (C,)
@@ -381,7 +396,9 @@ class ZoneEnv(environment.Environment[EnvState, EnvParams, ObsFeatures, ResetOpt
     @override
     def assignments() -> list[Assignment]:
         """Returns all possible assignments in the environment."""
-        assignments = [Assignment(frozenset({color})) for color in ZoneEnv.propositions]
+        assignments = [
+            Assignment(frozenset({color})) for color in ZoneEnvNM.propositions
+        ]
         assignments.append(Assignment(frozenset()))  # empty assignment
         return assignments
 

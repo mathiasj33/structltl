@@ -1,4 +1,4 @@
-"""A 2D renderer for the zone environment based on pygame."""
+"""A 2D renderer for the complex zone environment based on pygame."""
 
 import math
 from functools import partial
@@ -10,7 +10,7 @@ import pygame
 from pygame import gfxdraw
 
 from jaxltl.environments.renderer.renderer import ContinuousTimeRenderer
-from jaxltl.environments.zone_env.zone_env import (
+from jaxltl.environments.zone_env_nm.zone_env_nm import (
     EnvParams,
     EnvState,
     ObsFeatures,
@@ -26,7 +26,7 @@ class Renderer(ContinuousTimeRenderer[ObsFeatures, ResetOptions]):
         grid_size: int = 50,
         show_lidar: bool = False,
     ):
-        super().__init__("Zone Environment", screen_size)
+        super().__init__("Complex Zone Environment", screen_size)
 
         self._params = params
         self._screen_size = screen_size
@@ -70,6 +70,8 @@ class Renderer(ContinuousTimeRenderer[ObsFeatures, ResetOptions]):
         centers = self._world_to_screen(state.zone_centers).tolist()
         for i, center in enumerate(centers):
             color_id = int(state.zone_colors[i])
+            if state.masked_colors[color_id]:
+                continue  # Skip rendering masked zones
             col = self._zone_colors.get(color_id, (0, 0, 0))
             self._draw_circle(self._screen, col, center, self._zone_radius_px)
 
