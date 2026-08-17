@@ -4,10 +4,10 @@
 ## Zero-Shot Instruction Following in RL via Structured LTL Representations
 
 This repository contains the official implementation of StructLTL ([arxiv.org/2602.14344](https://arxiv.org/pdf/2602.14344)), as well as the environments
-*ZoneEnv* and *Warehouse*.
+*ZoneEnv-NM* and *Warehouse*.
 
-Also included are baselines [DeepLTL](https://arxiv.org/pdf/2410.04631) and
-[LTL2Action](https://arxiv.org/pdf/2102.06858) for comparison.
+Also included are baselines [DeepLTL](https://arxiv.org/pdf/2410.04631),
+[LTL2Action](https://arxiv.org/pdf/2102.06858), and [GenZ-LTL](https://arxiv.org/abs/2508.01561) for comparison. We adapted these baselines to fit within our JAX-based implementation of StructLTL and the environments.
 
 ## Installation
 
@@ -30,6 +30,24 @@ link](https://www7.in.tum.de/~kretinsk/rabinizer4.zip) and unzip it into the
 ```
 which should print a help message.
 We tested the implementation with OpenJDK 17.0.18.
+
+### Docker
+We alternatively provide a Dockerfile to build an image with all required dependencies:
+```bash
+docker build -t structltl:gpu .
+```
+
+Note that this is a GPU-enabled image and requires a working [Docker](https://www.docker.com/) and [NVIDIA container toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installation.
+
+We recommend mounting `runs` and `data` directories for preservation:
+```bash
+mkdir data runs
+docker run --rm -it --gpus all \
+  --shm-size=2g \
+  --mount type=bind,src="$PWD/data",dst=/workspace/data \
+  --mount type=bind,src="$PWD/runs",dst=/workspace/runs \
+  structltl:gpu
+```
 
 ## Experiments
 
@@ -64,16 +82,25 @@ pixi run -e gpu python scripts/plotting/plot_training_curves.py
 ```
 **NOTE**: you will need to edit which runs to plot inside `scripts/plotting/plot_training_curves.py`
 
+> [!NOTE]
+> If you run into OOM errors, reduce the `num_seeds` that are trained in parallel. You can combine trained models from different runs with [combine_models.py](scripts/combine_models.py).
+
 ### Evaluation
 
 To evaluate the trained policy on a set of LTL formulae:
 ```bash
-pixi run -e gpu python scripts/eval/eval.py experiment=struct_ltl/warehouse run=tmp formulas=warehouse/finite
+pixi run -e gpu python scripts/eval/eval.py experiment=struct_ltl/warehouse run=tmp formulas=warehouse/finite eval.finite=True
 ```
+
+> [!NOTE]
+> If you run into OOM errors, the eval script supports `models_per_batch` and `formulas_per_batch` to control the evaluation parallelism. Lowering these will reduce memory requirements, at the expense of longer runtimes.
+
+> [!TIP]
+> All formulae used in the paper are provided in `conf/formulas`.
 
 To visualize trajectories for the trained policy on an LTL formula (both for drawing trajectories and rendering them in real-time):
 ```bash
-pixi run -e gpu python scripts/eval/visualize_trajectories.py experiment=struct_ltl/warehouse run=tmp eval.formula="F (vase & door & X(!crate & door))"
+pixi run -e gpu python scripts/eval/visualize_trajectories.py experiment=struct_ltl/warehouse run=tmp eval.formula="F (vase & region_a & X(!vase & region_a))"
 ```
 
 To compute evaluation curves:
@@ -89,7 +116,7 @@ pixi run -e gpu python scripts/plotting/plot_eval_curves.py
 
 ### Ablation Studies
 
-This repository includes code for reproducing the ablation studies D.1 and D.2. See `conf/experiment/tokenized_ltl/warehouse.yaml` for a configuration of StructLTL with a flat sequence model. To traing StructLTL with a GRU encoder instead of the attention mechanism, specify `model/sequence=gru`. 
+This repository includes code for reproducing the ablation studies D.2.1 and D.2.2. See `conf/experiment/tokenized_ltl/warehouse.yaml` for a configuration of StructLTL with a flat sequence model, and `conf/experiment/gcn_ltl/warehouse.yaml` for the GNN configuration. To train StructLTL with a GRU encoder instead of the attention mechanism, specify `model/sequence=gru`. 
 
 ## License
 

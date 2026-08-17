@@ -1,4 +1,4 @@
-FROM nvidia/cuda:12.4.1-cudnn-runtime-ubuntu22.04
+FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -20,7 +20,9 @@ WORKDIR /workspace
 
 # Copy project files and install the GPU environment declared in pyproject.toml.
 COPY . .
-RUN pixi install -e gpu
+RUN pixi install -e gpu \
+    && pixi run -e gpu copy-templates \
+    && pixi clean cache -y
 
 # Install Rabinizer 4 in the expected project location.
 RUN mkdir -p dependencies \
