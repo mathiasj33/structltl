@@ -91,7 +91,7 @@ class TestVocabulary:
         vocab = Vocabulary.from_propositions(["a", "b", "c"])
 
         # Check special tokens are present
-        assert vocab.epsilon_idx > 0
+        assert vocab.epsilon_idx == 0
         assert vocab.and_idx > 0
         assert vocab.or_idx > 0
 
@@ -104,7 +104,7 @@ class TestVocabulary:
         """Test vocabulary length includes special tokens and propositions."""
         vocab = Vocabulary.from_propositions(["a", "b"])
         # 10 special tokens + 2 propositions
-        assert len(vocab) == 10
+        assert len(vocab) == 9  # noqa
 
 
 class TestTokenizeReachAvoidStep:

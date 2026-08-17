@@ -43,7 +43,6 @@ class Vocabulary:
         """Create a vocabulary from a list of proposition names.
 
         The vocabulary includes:
-        - PAD token (index 0)
         - Special tokens (EPSILON, AND, OR, NOT, TRUE, FALSE, EMPTY)
         - All proposition names
         """

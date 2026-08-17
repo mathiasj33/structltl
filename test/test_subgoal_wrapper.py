@@ -85,7 +85,9 @@ def test_sample_new_goal_excludes_current_assignment_and_reach():
         for _ in range(50):
             # Pass the basic_state to match the new signature
             subgoal = wrapper._sample_new_goal(
-                jnp.array(a, dtype=jnp.int32), basic_state, subkey
+                jnp.array(a, dtype=jnp.int32),
+                basic_state,  # type: ignore
+                subkey,
             )
             reach = int(subgoal.reach)
             avoid = list(subgoal.avoid.tolist())
@@ -129,7 +131,9 @@ def test_sample_new_goal_excludes_current_assignment_and_reach():
             key, subkey = jax.random.split(key)
             for _ in range(50):
                 subgoal = wrapper._sample_new_goal(
-                    jnp.array(a, dtype=jnp.int32), subgoal_complex_state, subkey
+                    jnp.array(a, dtype=jnp.int32),
+                    subgoal_complex_state,  # type: ignore
+                    subkey,
                 )
                 reach = int(subgoal.reach)
                 avoid = list(subgoal.avoid.tolist())

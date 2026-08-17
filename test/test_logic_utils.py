@@ -165,35 +165,30 @@ def test_synthesize_formula_complex_logic():
 
 
 def test_formula_to_clauses_false():
-    propositions = ("a",)
     formula = FalseNode()
-    assert formula_to_clauses(formula, propositions) == []
+    assert formula_to_clauses(formula) == []
 
 
 def test_formula_to_clauses_single_positive_literal():
-    propositions = ("a",)
     formula = VarNode("a")
     expected = [Clause(pos=frozenset({"a"}), neg=frozenset())]
-    assert formula_to_clauses(formula, propositions) == expected
+    assert formula_to_clauses(formula) == expected
 
 
 def test_formula_to_clauses_single_negative_literal():
-    propositions = ("a",)
     formula = NotNode(VarNode("a"))
     expected = [Clause(pos=frozenset(), neg=frozenset({"a"}))]
-    assert formula_to_clauses(formula, propositions) == expected
+    assert formula_to_clauses(formula) == expected
 
 
 def test_formula_to_clauses_single_clause():
-    propositions = ("a", "b", "c")
     # a AND b AND (NOT c)
     formula = MultiAndNode([VarNode("a"), VarNode("b"), NotNode(VarNode("c"))])
     expected = [Clause(pos=frozenset({"a", "b"}), neg=frozenset({"c"}))]
-    assert formula_to_clauses(formula, propositions) == expected
+    assert formula_to_clauses(formula) == expected
 
 
 def test_formula_to_clauses_dnf():
-    propositions = ("a", "b", "c", "d")
     # (a AND (NOT b)) OR (c AND d)
     clause1 = MultiAndNode([VarNode("a"), NotNode(VarNode("b"))])
     clause2 = MultiAndNode([VarNode("c"), VarNode("d")])
@@ -204,13 +199,12 @@ def test_formula_to_clauses_dnf():
         Clause(pos=frozenset({"c", "d"}), neg=frozenset()),
     ]
     # The order of clauses from MultiOrNode is not guaranteed
-    result_clauses = formula_to_clauses(formula, propositions)
+    result_clauses = formula_to_clauses(formula)
     assert len(result_clauses) == len(expected)
     assert set(result_clauses) == set(expected)
 
 
 def test_formula_to_clauses_mixed_literals_and_clauses():
-    propositions = ("a", "b", "c")
     # a OR (b AND c)
     clause1 = VarNode("a")
     clause2 = MultiAndNode([VarNode("b"), VarNode("c")])
@@ -220,27 +214,25 @@ def test_formula_to_clauses_mixed_literals_and_clauses():
         Clause(pos=frozenset({"a"}), neg=frozenset()),
         Clause(pos=frozenset({"b", "c"}), neg=frozenset()),
     ]
-    result_clauses = formula_to_clauses(formula, propositions)
+    result_clauses = formula_to_clauses(formula)
     assert len(result_clauses) == len(expected)
     assert set(result_clauses) == set(expected)
 
 
 def test_formula_to_clauses_not_dnf_raises_error():
-    propositions = ("a", "b", "c")
     # a AND (b OR c) - not in DNF that the function supports
     formula = MultiAndNode([VarNode("a"), MultiOrNode([VarNode("b"), VarNode("c")])])
     with pytest.raises(
         ValueError, match="Invalid operand in AND node for DNF conversion."
     ):
-        formula_to_clauses(formula, propositions)
+        formula_to_clauses(formula)
 
 
 def test_formula_to_clauses_nested_or_raises_error():
-    propositions = ("a", "b", "c")
     # (a OR b) OR c
     # The function expects each operand of an OR to be a single clause
     formula = MultiOrNode([MultiOrNode([VarNode("a"), VarNode("b")]), VarNode("c")])
     with pytest.raises(
         ValueError, match="Each operand in OR node must correspond to a single clause."
     ):
-        formula_to_clauses(formula, propositions)
+        formula_to_clauses(formula)
